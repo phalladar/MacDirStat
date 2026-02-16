@@ -67,7 +67,7 @@ struct TreemapRenderer {
                     width: screenRect.width - 6,
                     height: 14
                 )
-                let sizeText = Text(ByteFormatter.string(from: item.node.ownSize))
+                let sizeText = Text(ByteFormatter.string(from: item.node.totalSize))
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.7))
                 context.draw(sizeText, in: sizeRect)
