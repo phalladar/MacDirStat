@@ -1,7 +1,14 @@
 import SwiftUI
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+}
+
 @main
 struct MacDirStatApp: App {
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var appState = AppState()
 
     var body: some Scene {
