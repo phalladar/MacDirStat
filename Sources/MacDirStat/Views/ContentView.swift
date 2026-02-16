@@ -92,18 +92,25 @@ struct ContentView: View {
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
+                    if let path = appState.rootNode?.path {
+                        coordinator?.startScan(path: path)
+                    }
+                } label: {
+                    Label("Rescan", systemImage: "arrow.clockwise")
+                }
+                .disabled(appState.rootNode == nil)
+
+                Button {
                     selectAndScan()
                 } label: {
                     Label("Scan Drive", systemImage: "internaldrive.fill")
                 }
 
-                Picker("Size", selection: $state.sizeMetric) {
-                    ForEach(SizeMetric.allCases, id: \.self) { metric in
-                        Text(metric.rawValue).tag(metric)
+                SizeMetricPicker(sizeMetric: $state.sizeMetric) {
+                    if appState.scanStatus == .idle, appState.rootNode != nil {
+                        appState.scanStatus = .completed
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 200)
 
                 Button {
                     zoomIn?()
@@ -155,7 +162,34 @@ struct ContentView: View {
 
     private func selectAndScan() {
         coordinator?.cancel()
-        appState.reset()
+        appState.scanStatus = .idle
+    }
+}
+
+// MARK: - Size Metric Picker
+
+struct SizeMetricPicker: View {
+    @Binding var sizeMetric: SizeMetric
+    var onTap: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(SizeMetric.allCases, id: \.self) { metric in
+                Button {
+                    sizeMetric = metric
+                    onTap()
+                } label: {
+                    Text(metric.rawValue)
+                        .font(.body)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+                .background(sizeMetric == metric ? Color.accentColor.opacity(0.2) : Color.clear)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
     }
 }
 
