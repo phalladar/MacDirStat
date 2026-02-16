@@ -5,18 +5,26 @@ struct TreemapRenderer {
     let hoveredItemID: Int?
     let selectedItemID: Int?
     let zoomScale: CGFloat
+    let panOffset: CGPoint
+    let showLabels: Bool
 
     func draw(in context: inout GraphicsContext, size: CGSize) {
+        let viewport = CGRect(origin: .zero, size: size)
+
         for item in items {
-            let rect = CGRect(
-                x: item.rect.x,
-                y: item.rect.y,
-                width: item.rect.width,
-                height: item.rect.height
+            // Transform layout coordinates to screen coordinates
+            let screenRect = CGRect(
+                x: panOffset.x + item.rect.x * zoomScale,
+                y: panOffset.y + item.rect.y * zoomScale,
+                width: item.rect.width * zoomScale,
+                height: item.rect.height * zoomScale
             )
 
+            // Viewport culling — skip items entirely off-screen
+            guard screenRect.intersects(viewport) else { continue }
+
             // Fill
-            let path = Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1)
+            let path = Path(roundedRect: screenRect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1)
             context.fill(path, with: .color(Color(cgColor: item.color)))
 
             // Border
@@ -30,23 +38,20 @@ struct TreemapRenderer {
             // Selection highlight
             if item.id == selectedItemID {
                 context.stroke(
-                    Path(rect.insetBy(dx: 1, dy: 1)),
+                    Path(screenRect.insetBy(dx: 1, dy: 1)),
                     with: .color(.white),
                     lineWidth: 2
                 )
             }
 
-            // Labels — use effective (zoomed) dimensions for visibility thresholds
-            // so more labels appear as the user zooms in
-            let effectiveWidth = item.rect.width * zoomScale
-            let effectiveHeight = item.rect.height * zoomScale
-
-            if effectiveWidth > 60 && effectiveHeight > 16 {
+            // Name label — font stays at 10pt regardless of zoom
+            // Labels are suppressed during active zoom/pan for smooth rendering
+            if showLabels && screenRect.width > 60 && screenRect.height > 16 {
                 let labelRect = CGRect(
-                    x: item.rect.x + 3,
-                    y: item.rect.y + 2,
-                    width: item.rect.width - 6,
-                    height: min(item.rect.height - 4, 16)
+                    x: screenRect.minX + 3,
+                    y: screenRect.minY + 2,
+                    width: screenRect.width - 6,
+                    height: min(screenRect.height - 4, 16)
                 )
                 let text = Text(item.node.name)
                     .font(.system(size: 10))
@@ -55,11 +60,11 @@ struct TreemapRenderer {
             }
 
             // Size label for larger rects
-            if effectiveWidth > 80 && effectiveHeight > 32 {
+            if showLabels && screenRect.width > 80 && screenRect.height > 32 {
                 let sizeRect = CGRect(
-                    x: item.rect.x + 3,
-                    y: item.rect.y + 16,
-                    width: item.rect.width - 6,
+                    x: screenRect.minX + 3,
+                    y: screenRect.minY + 16,
+                    width: screenRect.width - 6,
                     height: 14
                 )
                 let sizeText = Text(ByteFormatter.string(from: item.node.ownSize))

@@ -122,9 +122,10 @@ struct ZoomPanOverlay: NSViewRepresentable {
                 }
             }
             if didDrag {
-                // deltaX positive = mouse moved right, deltaY positive = mouse moved up (AppKit)
-                // SwiftUI Y increases downward, so negate deltaY
-                onPanDelta?(event.deltaX, -event.deltaY)
+                // deltaX/deltaY are in screen points matching cursor movement.
+                // deltaY positive = cursor moved up = content should move up =
+                // panOffset.y should decrease, so pass deltaY as-is (negative direction).
+                onPanDelta?(event.deltaX, event.deltaY)
             }
         }
 

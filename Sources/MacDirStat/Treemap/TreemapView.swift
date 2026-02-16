@@ -12,6 +12,8 @@ struct TreemapView: View {
     @State private var layoutTask: Task<Void, Never>?
     @State private var zoomScale: CGFloat = 1.0
     @State private var panOffset: CGPoint = .zero
+    @State private var showLabels: Bool = true
+    @State private var labelDebounce: Task<Void, Never>?
 
     var body: some View {
         GeometryReader { geometry in
@@ -21,7 +23,8 @@ struct TreemapView: View {
                     items: items,
                     selectedItemID: selectedItemID,
                     zoomScale: zoomScale,
-                    panOffset: panOffset
+                    panOffset: panOffset,
+                    showLabels: showLabels
                 )
 
                 // Lightweight hover overlay — redraws only the single highlight rect
@@ -78,6 +81,7 @@ struct TreemapView: View {
                         panOffset.x += dx
                         panOffset.y += dy
                         clampPan(viewSize: geometry.size)
+                        suppressLabelsDuringInteraction()
                     },
                     onMiddleClick: { location in
                         performZoom(by: 0.5, centeredAt: location, viewSize: geometry.size)
@@ -134,6 +138,17 @@ struct TreemapView: View {
             y: point.y - contentPoint.y * newScale
         )
         clampPan(viewSize: viewSize)
+        suppressLabelsDuringInteraction()
+    }
+
+    private func suppressLabelsDuringInteraction() {
+        showLabels = false
+        labelDebounce?.cancel()
+        labelDebounce = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            showLabels = true
+        }
     }
 
     private func clampPan(viewSize: CGSize) {
@@ -190,17 +205,17 @@ private struct TreemapBaseCanvas: View {
     let selectedItemID: Int?
     let zoomScale: CGFloat
     let panOffset: CGPoint
+    let showLabels: Bool
 
     var body: some View {
         Canvas { context, size in
-            context.translateBy(x: panOffset.x, y: panOffset.y)
-            context.scaleBy(x: zoomScale, y: zoomScale)
-
             let renderer = TreemapRenderer(
                 items: items,
                 hoveredItemID: nil,
                 selectedItemID: selectedItemID,
-                zoomScale: zoomScale
+                zoomScale: zoomScale,
+                panOffset: panOffset,
+                showLabels: showLabels
             )
             renderer.draw(in: &context, size: size)
         }
@@ -220,16 +235,13 @@ private struct TreemapHoverOverlay: View {
             guard let hoveredID = hoveredItemID,
                   let item = items.first(where: { $0.id == hoveredID }) else { return }
 
-            context.translateBy(x: panOffset.x, y: panOffset.y)
-            context.scaleBy(x: zoomScale, y: zoomScale)
-
-            let rect = CGRect(
-                x: item.rect.x,
-                y: item.rect.y,
-                width: item.rect.width,
-                height: item.rect.height
+            let screenRect = CGRect(
+                x: panOffset.x + item.rect.x * zoomScale,
+                y: panOffset.y + item.rect.y * zoomScale,
+                width: item.rect.width * zoomScale,
+                height: item.rect.height * zoomScale
             )
-            let path = Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1)
+            let path = Path(roundedRect: screenRect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1)
             context.fill(path, with: .color(.white.opacity(0.25)))
         }
         .allowsHitTesting(false)
