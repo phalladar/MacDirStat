@@ -3,6 +3,9 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var coordinator: ScanCoordinator?
+    @FocusedValue(\.zoomInAction) private var zoomIn
+    @FocusedValue(\.zoomOutAction) private var zoomOut
+    @FocusedValue(\.resetZoomAction) private var resetZoom
 
     var body: some View {
         @Bindable var state = appState
@@ -102,6 +105,27 @@ struct ContentView: View {
                 .frame(width: 200)
 
                 Button {
+                    zoomIn?()
+                } label: {
+                    Label("Zoom In", systemImage: "plus.magnifyingglass")
+                }
+                .disabled(zoomIn == nil)
+
+                Button {
+                    zoomOut?()
+                } label: {
+                    Label("Zoom Out", systemImage: "minus.magnifyingglass")
+                }
+                .disabled(zoomOut == nil)
+
+                Button {
+                    resetZoom?()
+                } label: {
+                    Label("Reset Zoom", systemImage: "1.magnifyingglass")
+                }
+                .disabled(resetZoom == nil)
+
+                Button {
                     appState.showInspector.toggle()
                 } label: {
                     Label("Inspector", systemImage: "sidebar.right")
@@ -174,9 +198,36 @@ struct ScanActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
 
+struct ZoomInActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+struct ZoomOutActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+struct ResetZoomActionKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
 extension FocusedValues {
     var scanAction: (() -> Void)? {
         get { self[ScanActionKey.self] }
         set { self[ScanActionKey.self] = newValue }
+    }
+
+    var zoomInAction: (() -> Void)? {
+        get { self[ZoomInActionKey.self] }
+        set { self[ZoomInActionKey.self] = newValue }
+    }
+
+    var zoomOutAction: (() -> Void)? {
+        get { self[ZoomOutActionKey.self] }
+        set { self[ZoomOutActionKey.self] = newValue }
+    }
+
+    var resetZoomAction: (() -> Void)? {
+        get { self[ResetZoomActionKey.self] }
+        set { self[ResetZoomActionKey.self] = newValue }
     }
 }

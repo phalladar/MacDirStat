@@ -4,6 +4,7 @@ struct TreemapRenderer {
     let items: [TreemapItem]
     let hoveredItemID: Int?
     let selectedItemID: Int?
+    let zoomScale: CGFloat
 
     func draw(in context: inout GraphicsContext, size: CGSize) {
         for item in items {
@@ -35,8 +36,12 @@ struct TreemapRenderer {
                 )
             }
 
-            // Label
-            if item.rect.width > 60 && item.rect.height > 16 {
+            // Labels — use effective (zoomed) dimensions for visibility thresholds
+            // so more labels appear as the user zooms in
+            let effectiveWidth = item.rect.width * zoomScale
+            let effectiveHeight = item.rect.height * zoomScale
+
+            if effectiveWidth > 60 && effectiveHeight > 16 {
                 let labelRect = CGRect(
                     x: item.rect.x + 3,
                     y: item.rect.y + 2,
@@ -50,7 +55,7 @@ struct TreemapRenderer {
             }
 
             // Size label for larger rects
-            if item.rect.width > 80 && item.rect.height > 32 {
+            if effectiveWidth > 80 && effectiveHeight > 32 {
                 let sizeRect = CGRect(
                     x: item.rect.x + 3,
                     y: item.rect.y + 16,

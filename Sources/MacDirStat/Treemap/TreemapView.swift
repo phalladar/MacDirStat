@@ -10,35 +10,43 @@ struct TreemapView: View {
     @State private var selectedItemID: Int?
     @State private var lastSize: CGSize = .zero
     @State private var layoutTask: Task<Void, Never>?
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var panOffset: CGPoint = .zero
 
     var body: some View {
         GeometryReader { geometry in
-            Canvas { context, size in
-                let renderer = TreemapRenderer(
+            ZStack {
+                // Base treemap — only redraws when items or selection change
+                TreemapBaseCanvas(
+                    items: items,
+                    selectedItemID: selectedItemID,
+                    zoomScale: zoomScale,
+                    panOffset: panOffset
+                )
+
+                // Lightweight hover overlay — redraws only the single highlight rect
+                TreemapHoverOverlay(
                     items: items,
                     hoveredItemID: hoveredItemID,
-                    selectedItemID: selectedItemID
+                    zoomScale: zoomScale,
+                    panOffset: panOffset
                 )
-                renderer.draw(in: &context, size: size)
             }
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
-                    let hitTester = TreemapHitTester(items: items)
-                    hoveredItemID = hitTester.itemAt(point: location)?.id
+                    hoveredItemID = hitTestID(at: screenToContent(location))
                 case .ended:
                     hoveredItemID = nil
                 }
             }
             .onTapGesture(count: 2) { location in
-                let hitTester = TreemapHitTester(items: items)
-                if let item = hitTester.itemAt(point: location), item.node.isDirectory {
+                if let item = hitTestItem(at: screenToContent(location)), item.node.isDirectory {
                     onDrillDown(item.node)
                 }
             }
             .onTapGesture(count: 1) { location in
-                let hitTester = TreemapHitTester(items: items)
-                if let item = hitTester.itemAt(point: location) {
+                if let item = hitTestItem(at: screenToContent(location)) {
                     selectedItemID = item.id
                     onSelect(item.node)
                 }
@@ -61,6 +69,21 @@ struct TreemapView: View {
                     }
                 }
             }
+            .overlay {
+                ZoomPanOverlay(
+                    onZoom: { factor, center in
+                        performZoom(by: factor, centeredAt: center, viewSize: geometry.size)
+                    },
+                    onPanDelta: { dx, dy in
+                        panOffset.x += dx
+                        panOffset.y += dy
+                        clampPan(viewSize: geometry.size)
+                    },
+                    onMiddleClick: { location in
+                        performZoom(by: 0.5, centeredAt: location, viewSize: geometry.size)
+                    }
+                )
+            }
             .onChange(of: geometry.size) { _, newSize in
                 recomputeLayout(size: newSize)
             }
@@ -68,10 +91,74 @@ struct TreemapView: View {
                 recomputeLayout(size: geometry.size)
             }
             .onChange(of: root.id) {
+                zoomScale = 1.0
+                panOffset = .zero
                 recomputeLayout(size: geometry.size)
             }
         }
         .background(.black)
+        .focusedSceneValue(\.zoomInAction) {
+            let center = CGPoint(x: lastSize.width / 2, y: lastSize.height / 2)
+            performZoom(by: 0.3, centeredAt: center, viewSize: lastSize)
+        }
+        .focusedSceneValue(\.zoomOutAction) {
+            let center = CGPoint(x: lastSize.width / 2, y: lastSize.height / 2)
+            performZoom(by: -0.3, centeredAt: center, viewSize: lastSize)
+        }
+        .focusedSceneValue(\.resetZoomAction) {
+            zoomScale = 1.0
+            panOffset = .zero
+        }
+    }
+
+    private func screenToContent(_ point: CGPoint) -> CGPoint {
+        CGPoint(
+            x: (point.x - panOffset.x) / zoomScale,
+            y: (point.y - panOffset.y) / zoomScale
+        )
+    }
+
+    private func performZoom(by factor: CGFloat, centeredAt point: CGPoint, viewSize: CGSize) {
+        let oldScale = zoomScale
+        let newScale = max(1.0, min(oldScale * (1 + factor), 50.0))
+        guard newScale != oldScale else { return }
+
+        // Keep the point under cursor fixed in screen space
+        let contentPoint = CGPoint(
+            x: (point.x - panOffset.x) / oldScale,
+            y: (point.y - panOffset.y) / oldScale
+        )
+        zoomScale = newScale
+        panOffset = CGPoint(
+            x: point.x - contentPoint.x * newScale,
+            y: point.y - contentPoint.y * newScale
+        )
+        clampPan(viewSize: viewSize)
+    }
+
+    private func clampPan(viewSize: CGSize) {
+        let contentWidth = viewSize.width * zoomScale
+        let contentHeight = viewSize.height * zoomScale
+        panOffset.x = min(0, max(viewSize.width - contentWidth, panOffset.x))
+        panOffset.y = min(0, max(viewSize.height - contentHeight, panOffset.y))
+    }
+
+    private func hitTestID(at point: CGPoint) -> Int? {
+        for item in items.reversed() {
+            if item.rect.contains(point: point) {
+                return item.id
+            }
+        }
+        return nil
+    }
+
+    private func hitTestItem(at point: CGPoint) -> TreemapItem? {
+        for item in items.reversed() {
+            if item.rect.contains(point: point) {
+                return item
+            }
+        }
+        return nil
     }
 
     private func recomputeLayout(size: CGSize) {
@@ -92,5 +179,59 @@ struct TreemapView: View {
     private func revealInFinder(node: FileNode) {
         let path = node.path
         NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
+    }
+}
+
+/// Heavy canvas that renders all treemap items with fills, borders, labels.
+/// Extracted as a separate view so SwiftUI skips re-rendering it when only
+/// the hovered item changes.
+private struct TreemapBaseCanvas: View {
+    let items: [TreemapItem]
+    let selectedItemID: Int?
+    let zoomScale: CGFloat
+    let panOffset: CGPoint
+
+    var body: some View {
+        Canvas { context, size in
+            context.translateBy(x: panOffset.x, y: panOffset.y)
+            context.scaleBy(x: zoomScale, y: zoomScale)
+
+            let renderer = TreemapRenderer(
+                items: items,
+                hoveredItemID: nil,
+                selectedItemID: selectedItemID,
+                zoomScale: zoomScale
+            )
+            renderer.draw(in: &context, size: size)
+        }
+    }
+}
+
+/// Lightweight overlay that draws only the hover highlight rectangle.
+/// Re-renders on every hover change but only paints a single translucent rect.
+private struct TreemapHoverOverlay: View {
+    let items: [TreemapItem]
+    let hoveredItemID: Int?
+    let zoomScale: CGFloat
+    let panOffset: CGPoint
+
+    var body: some View {
+        Canvas { context, _ in
+            guard let hoveredID = hoveredItemID,
+                  let item = items.first(where: { $0.id == hoveredID }) else { return }
+
+            context.translateBy(x: panOffset.x, y: panOffset.y)
+            context.scaleBy(x: zoomScale, y: zoomScale)
+
+            let rect = CGRect(
+                x: item.rect.x,
+                y: item.rect.y,
+                width: item.rect.width,
+                height: item.rect.height
+            )
+            let path = Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1)
+            context.fill(path, with: .color(.white.opacity(0.25)))
+        }
+        .allowsHitTesting(false)
     }
 }
