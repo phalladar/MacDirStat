@@ -12,7 +12,7 @@ struct ContentView: View {
 
         NavigationSplitView {
             if let root = appState.rootNode {
-                DirectoryTreeView(root: root, selectedNode: $state.selectedNode)
+                DirectoryTreeView(root: root, selectedNode: $state.selectedNode, sizeMetric: appState.sizeMetric)
                     .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 400)
             } else {
                 Text("No data")
@@ -57,7 +57,8 @@ struct ContentView: View {
                                 },
                                 onDrillDown: { node in
                                     appState.drillDown(to: node)
-                                }
+                                },
+                                sizeMetric: appState.sizeMetric
                             )
                         }
                     }

@@ -32,11 +32,11 @@ struct TreemapLayoutEngine: Sendable {
         self.minPixelArea = minPixelArea
     }
 
-    func layout(root: FileNode, in bounds: TreemapRect) -> [TreemapItem] {
+    func layout(root: FileNode, in bounds: TreemapRect, sizeMetric: SizeMetric = .fileSize) -> [TreemapItem] {
         var items: [TreemapItem] = []
         items.reserveCapacity(8192)
         var nextID = 0
-        layoutNode(root, in: bounds, depth: 0, items: &items, nextID: &nextID)
+        layoutNode(root, in: bounds, depth: 0, sizeMetric: sizeMetric, items: &items, nextID: &nextID)
         return items
     }
 
@@ -55,6 +55,7 @@ struct TreemapLayoutEngine: Sendable {
         _ node: FileNode,
         in bounds: TreemapRect,
         depth: Int,
+        sizeMetric: SizeMetric,
         items: inout [TreemapItem],
         nextID: inout Int
     ) {
@@ -74,7 +75,7 @@ struct TreemapLayoutEngine: Sendable {
         }
 
         // Filter children with positive size
-        let children = node.children.filter { $0.totalSize > 0 }
+        let children = node.children.filter { $0.size(for: sizeMetric) > 0 }
         guard !children.isEmpty else {
             let itemID = nextID; nextID += 1
             items.append(TreemapItem(
@@ -97,16 +98,16 @@ struct TreemapLayoutEngine: Sendable {
             color: colorForNode(node, depth: depth)
         ))
 
-        let totalSize = Double(children.reduce(0) { $0 + $1.totalSize })
+        let totalSize = Double(children.reduce(0) { $0 + $1.size(for: sizeMetric) })
         guard totalSize > 0 else { return }
 
         // Compute normalized sizes proportional to area
-        let sizes = children.map { Double($0.totalSize) / totalSize * bounds.area }
+        let sizes = children.map { Double($0.size(for: sizeMetric)) / totalSize * bounds.area }
 
         let rects = squarify(sizes: sizes, in: bounds)
 
         for (i, child) in children.enumerated() where i < rects.count {
-            layoutNode(child, in: rects[i], depth: depth + 1, items: &items, nextID: &nextID)
+            layoutNode(child, in: rects[i], depth: depth + 1, sizeMetric: sizeMetric, items: &items, nextID: &nextID)
         }
     }
 

@@ -7,6 +7,7 @@ struct TreemapRenderer {
     let zoomScale: CGFloat
     let panOffset: CGPoint
     let showLabels: Bool
+    let sizeMetric: SizeMetric
 
     func draw(in context: inout GraphicsContext, size: CGSize) {
         let viewport = CGRect(origin: .zero, size: size)
@@ -67,7 +68,7 @@ struct TreemapRenderer {
                     width: screenRect.width - 6,
                     height: 14
                 )
-                let sizeText = Text(ByteFormatter.string(from: item.node.totalSize))
+                let sizeText = Text(ByteFormatter.string(from: item.node.size(for: sizeMetric)))
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.7))
                 context.draw(sizeText, in: sizeRect)

@@ -98,6 +98,13 @@ final class FileNode: Identifiable, @unchecked Sendable {
         }
     }
 
+    func size(for metric: SizeMetric) -> Int64 {
+        switch metric {
+        case .fileSize: totalSize
+        case .allocatedSize: totalAllocatedSize
+        }
+    }
+
     var directoryChildren: [FileNode] {
         children.filter(\.isDirectory)
     }

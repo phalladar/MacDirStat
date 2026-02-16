@@ -3,6 +3,7 @@ import SwiftUI
 struct DirectoryTreeView: View {
     let root: FileNode
     @Binding var selectedNode: FileNode?
+    let sizeMetric: SizeMetric
 
     var body: some View {
         List(selection: Binding(
@@ -14,7 +15,7 @@ struct DirectoryTreeView: View {
             }
         )) {
             OutlineGroup(root.directoryChildren, id: \.id, children: \.optionalDirectoryChildren) { node in
-                DirectoryRow(node: node)
+                DirectoryRow(node: node, sizeMetric: sizeMetric)
             }
         }
         .listStyle(.sidebar)
@@ -33,6 +34,7 @@ struct DirectoryTreeView: View {
 
 struct DirectoryRow: View {
     let node: FileNode
+    let sizeMetric: SizeMetric
 
     var body: some View {
         HStack(spacing: 6) {
@@ -46,7 +48,7 @@ struct DirectoryRow: View {
 
             Spacer()
 
-            Text(ByteFormatter.string(from: node.totalSize))
+            Text(ByteFormatter.string(from: node.size(for: sizeMetric)))
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }

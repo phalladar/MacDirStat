@@ -4,6 +4,7 @@ struct TreemapView: View {
     let root: FileNode
     let onSelect: (FileNode) -> Void
     let onDrillDown: (FileNode) -> Void
+    let sizeMetric: SizeMetric
 
     @State private var items: [TreemapItem] = []
     @State private var hoveredItemID: Int?
@@ -15,7 +16,13 @@ struct TreemapView: View {
     @State private var showLabels: Bool = true
     @State private var labelDebounce: Task<Void, Never>?
 
+    private var hoveredNode: FileNode? {
+        guard let id = hoveredItemID else { return nil }
+        return items.first { $0.id == id }?.node
+    }
+
     var body: some View {
+        VStack(spacing: 0) {
         GeometryReader { geometry in
             ZStack {
                 // Base treemap — only redraws when items or selection change
@@ -24,7 +31,8 @@ struct TreemapView: View {
                     selectedItemID: selectedItemID,
                     zoomScale: zoomScale,
                     panOffset: panOffset,
-                    showLabels: showLabels
+                    showLabels: showLabels,
+                    sizeMetric: sizeMetric
                 )
 
                 // Lightweight hover overlay — redraws only the single highlight rect
@@ -99,8 +107,14 @@ struct TreemapView: View {
                 panOffset = .zero
                 recomputeLayout(size: geometry.size)
             }
+            .onChange(of: sizeMetric) {
+                recomputeLayout(size: geometry.size)
+            }
         }
         .background(.black)
+
+        TreemapStatusBar(node: hoveredNode, sizeMetric: sizeMetric)
+        }
         .focusedSceneValue(\.zoomInAction) {
             let center = CGPoint(x: lastSize.width / 2, y: lastSize.height / 2)
             performZoom(by: 0.3, centeredAt: center, viewSize: lastSize)
@@ -180,11 +194,12 @@ struct TreemapView: View {
         guard size.width > 0 && size.height > 0 else { return }
         lastSize = size
 
+        let metric = sizeMetric
         layoutTask?.cancel()
         layoutTask = Task.detached { [root] in
             let engine = TreemapLayoutEngine()
             let bounds = TreemapRect(x: 0, y: 0, width: Double(size.width), height: Double(size.height))
-            let newItems = engine.layout(root: root, in: bounds)
+            let newItems = engine.layout(root: root, in: bounds, sizeMetric: metric)
             await MainActor.run {
                 items = newItems
             }
@@ -206,6 +221,7 @@ private struct TreemapBaseCanvas: View {
     let zoomScale: CGFloat
     let panOffset: CGPoint
     let showLabels: Bool
+    let sizeMetric: SizeMetric
 
     var body: some View {
         Canvas { context, size in
@@ -215,7 +231,8 @@ private struct TreemapBaseCanvas: View {
                 selectedItemID: selectedItemID,
                 zoomScale: zoomScale,
                 panOffset: panOffset,
-                showLabels: showLabels
+                showLabels: showLabels,
+                sizeMetric: sizeMetric
             )
             renderer.draw(in: &context, size: size)
         }
@@ -245,5 +262,32 @@ private struct TreemapHoverOverlay: View {
             context.fill(path, with: .color(.white.opacity(0.25)))
         }
         .allowsHitTesting(false)
+    }
+}
+
+/// Status bar showing hovered item path and size.
+/// Extracted as a separate view so changes only redraw this text, not the canvases.
+private struct TreemapStatusBar: View {
+    let node: FileNode?
+    let sizeMetric: SizeMetric
+
+    var body: some View {
+        HStack(spacing: 0) {
+            if let node {
+                Text(node.path)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 12)
+                Text(ByteFormatter.string(from: node.size(for: sizeMetric)))
+                    .monospacedDigit()
+            } else {
+                Text(" ")
+            }
+        }
+        .font(.caption)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.bar)
     }
 }
