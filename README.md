@@ -1,5 +1,7 @@
 # MacDirStat
 
+**NOTE: This a a fork from original [/phalladar/MacDirStat](https://github.com/phalladar/MacDirStat).  Need to give him complete credit for core functionalities of the open-source project while I've added more to the pack: necessary configurations for app icon registered in the dock; build .app file for non-command line run.**
+
 **Free, open-source disk space analyzer for macOS — like [WinDirStat](https://windirstat.net/), but native to the Mac.**
 
 Find out what's eating your storage with interactive treemap visualizations, just like WinDirStat and WizTree on Windows. MacDirStat is a fast, lightweight, native macOS app built with SwiftUI — no Electron, no subscriptions, no tracking.
