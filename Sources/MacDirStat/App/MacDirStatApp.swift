@@ -1,6 +1,14 @@
 import SwiftUI
+import AppKit
+
+let kCFBundleIdentifier = "com.phalladar.MacDirStat"
+let kCFBundleDisplayName = "MacDirStat"
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ aNotification: Notification) { 
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
     }
@@ -32,3 +40,4 @@ struct MacDirStatApp: App {
 extension Notification.Name {
     static let openFolder = Notification.Name("openFolder")
 }
+
