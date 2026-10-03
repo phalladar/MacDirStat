@@ -31,15 +31,30 @@ If you've used **WinDirStat**, **WizTree**, or **TreeSize** on Windows and want 
 
 ## Installation
 
-### Build from source
+### Requirements
 
-Requires macOS 15.0+ and Swift 6.
+- macOS 15.0+
+- Swift 6 toolchain. Xcode is recommended: some Command Line Tools releases ship a macOS SDK whose SwiftUI needs the `SwiftUIMacros` compiler plugin but omit the plugin, which fails with `plugin for module 'SwiftUIMacros' not found`. If you hit that, install Xcode and run `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+
+### Install as an app
 
 ```bash
 git clone https://github.com/phalladar/MacDirStat.git
-cd macdirstat
+cd MacDirStat
+scripts/bundle-app.sh --install
+```
+
+This builds a release binary, wraps it in `MacDirStat.app` (with icon and `Info.plist`), ad-hoc signs it and copies it to `/Applications`. Launch it from Launchpad, Spotlight or Finder. Run the same command again to update after pulling changes.
+
+Without `--install`, the bundle is left in `build/MacDirStat.app` and nothing is copied.
+
+The app is ad-hoc signed, not notarized. Builds made on your own Mac launch normally; a copy moved to another Mac will be blocked by Gatekeeper until you right-click it and choose **Open**.
+
+### Run from source
+
+```bash
 swift build -c release
-swift run MacDirStat
+swift run -c release MacDirStat
 ```
 
 Or open in Xcode:
@@ -66,6 +81,10 @@ Sources/MacDirStat/
 ├── Treemap/          # Squarify layout engine, Canvas renderer, hit testing
 ├── Views/            # ContentView, WelcomeView, DirectoryTreeView, DetailPanelView
 └── Utilities/        # ByteFormatter
+Resources/
+└── AppIcon.iconset/  # App icon source images, converted to .icns by the bundle script
+scripts/
+└── bundle-app.sh     # Builds MacDirStat.app and optionally installs it
 ```
 
 ## Contributing
