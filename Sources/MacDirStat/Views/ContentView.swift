@@ -49,6 +49,15 @@ struct ContentView: View {
                                 }
                             )
 
+                            if let root = appState.rootNode,
+                               root.unscannedDirectoryCount > 0 || root.totalUnavailableEntryCount > 0 {
+                                Label("Incomplete scan: \(root.unscannedDirectoryCount.formatted()) folders and \(root.totalUnavailableEntryCount.formatted()) entries were not fully scanned. Select a folder for details.",
+                                      systemImage: "exclamationmark.triangle")
+                                    .font(.caption)
+                                    .foregroundStyle(.orange)
+                                    .padding(8)
+                            }
+
                             // Treemap
                             TreemapView(
                                 root: treemapRoot,
@@ -81,7 +90,7 @@ struct ContentView: View {
         }
         .inspector(isPresented: $state.showInspector) {
             if let selected = appState.selectedNode {
-                DetailPanelView(node: selected)
+                DetailPanelView(node: selected, sizeMetric: appState.sizeMetric)
                     .inspectorColumnWidth(min: 250, ideal: 300, max: 400)
             } else {
                 Text("Select an item to view details")
@@ -191,6 +200,8 @@ struct SizeMetricPicker: View {
                         .padding(.vertical, 4)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(metric.rawValue)
+                .accessibilityAddTraits(sizeMetric == metric ? .isSelected : [])
                 .background(sizeMetric == metric ? Color.accentColor.opacity(0.2) : Color.clear)
             }
         }

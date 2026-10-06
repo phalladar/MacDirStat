@@ -32,7 +32,7 @@ struct TreemapLayoutEngine: Sendable {
         self.minPixelArea = minPixelArea
     }
 
-    func layout(root: FileNode, in bounds: TreemapRect, sizeMetric: SizeMetric = .fileSize) -> [TreemapItem] {
+    func layout(root: FileNode, in bounds: TreemapRect, sizeMetric: SizeMetric = .allocatedSize) -> [TreemapItem] {
         var items: [TreemapItem] = []
         items.reserveCapacity(8192)
         var nextID = 0
@@ -76,6 +76,7 @@ struct TreemapLayoutEngine: Sendable {
 
         // Filter children with positive size
         let children = node.children.filter { $0.size(for: sizeMetric) > 0 }
+            .sorted { $0.size(for: sizeMetric) > $1.size(for: sizeMetric) }
         guard !children.isEmpty else {
             let itemID = nextID; nextID += 1
             items.append(TreemapItem(

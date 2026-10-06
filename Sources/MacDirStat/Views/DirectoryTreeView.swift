@@ -14,8 +14,9 @@ struct DirectoryTreeView: View {
                 }
             }
         )) {
-            OutlineGroup(root.directoryChildren, id: \.id, children: \.optionalDirectoryChildren) { node in
-                DirectoryRow(node: node, sizeMetric: sizeMetric)
+            OutlineGroup(DirectoryTreeEntry(node: root, metric: sizeMetric).children ?? [],
+                         children: \.children) { entry in
+                DirectoryRow(node: entry.node, sizeMetric: sizeMetric)
             }
         }
         .listStyle(.sidebar)
@@ -38,7 +39,7 @@ struct DirectoryRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "folder.fill")
+            Image(systemName: node.scanIssue != nil ? "folder.badge.questionmark" : "folder.fill")
                 .foregroundStyle(.secondary)
                 .font(.system(size: 13))
 
@@ -55,9 +56,13 @@ struct DirectoryRow: View {
     }
 }
 
-private extension FileNode {
-    var optionalDirectoryChildren: [FileNode]? {
-        let dirs = directoryChildren
-        return dirs.isEmpty ? nil : dirs
+private struct DirectoryTreeEntry: Identifiable {
+    let node: FileNode
+    let metric: SizeMetric
+    var id: UInt64 { node.id }
+
+    var children: [DirectoryTreeEntry]? {
+        let directories = node.directoryChildren.sorted { $0.size(for: metric) > $1.size(for: metric) }
+        return directories.isEmpty ? nil : directories.map { DirectoryTreeEntry(node: $0, metric: metric) }
     }
 }

@@ -43,7 +43,7 @@ To uninstall, quit MacDirStat and drag it from Applications to the Trash. It doe
 
 1. **Open MacDirStat.** The start screen lists your drives, with a bar showing how full each one is.
 2. **Pick what to scan.** Click your startup disk (usually **Macintosh HD**) to scan the whole Mac, click an external drive, or click **Choose a Custom Folder...** to scan a single folder.
-3. **Wait for the scan.** MacDirStat shows the number of files and the total size found so far. You can cancel at any time.
+3. **Wait for the scan.** MacDirStat shows the number of files and the allocated disk space found so far. You can cancel at any time.
 4. **Look for the biggest rectangles.** They are the files using the most space. Hover over any rectangle to see its full path and size in the status bar at the bottom.
 5. **Zoom in on crowded areas** with the scroll wheel, a trackpad pinch, or the zoom buttons in the toolbar.
 6. **Drill into a folder.** Double-click any rectangle to show just the folder it's in. The breadcrumb bar above the treemap, or the **Back** button, takes you back up.
@@ -60,10 +60,11 @@ MacDirStat never deletes or moves files itself.
 - **Inspector panel.** Shows size, allocated size, file and folder counts, last-modified date, and a bar chart of what each folder contains by file type.
 - **Drill down.** Double-click a rectangle to focus the treemap on its folder, then go back up with the breadcrumb bar or the Back button.
 - **Zoom and pan.** Zoom with the scroll wheel, a trackpad pinch, or the toolbar. Pan by dragging with the middle mouse button.
-- **File Size or Allocated Size.** Switch between each file's content size and the space it actually takes up on disk.
+- **File Size or Allocated Size.** Allocated Size is the default. Switch to File Size to see logical content sizes, including online-only files.
+- **Cloud-aware scanning.** File Provider placeholders (including OneDrive, synced SharePoint libraries, iCloud Drive, and other providers using macOS dataless files) are measured without downloading their contents. Cloud-only folders are skipped and marked as incomplete.
 - **Drive overview.** The start screen shows your mounted drives with their used and available space, or you can scan any folder.
 - **Reveal in Finder and Copy Path** from the inspector or the right-click menu.
-- **Parallel scanning with live progress.** MacDirStat reads the file system with low-level POSIX calls and scans folders in parallel. Hard-linked files are counted once.
+- **Parallel scanning with live progress.** MacDirStat reads file metadata in batches and scans folders in parallel, with a POSIX fallback for unsupported filesystems. Hard-linked files are counted once.
 - **Native and lightweight.** Built with SwiftUI, with no external dependencies, no Electron, and no bundled runtimes.
 - **Private by design.** The app has no networking code: no analytics, no crash reporting, no update checks. Your file list never leaves your Mac.
 
@@ -103,21 +104,30 @@ MacDirStat requires macOS 15 Sequoia or later. It doesn't run on macOS 14 Sonoma
 
 ### Why does MacDirStat need Full Disk Access?
 
-MacDirStat doesn't need Full Disk Access to run; the permission only lets it measure folders that macOS protects, such as Mail, Messages, and other apps' data. Without it, those folders are counted as empty, so totals can come out lower than the space actually in use. MacDirStat only reads file information and has no networking code, so granting access doesn't send anything anywhere. See [Optional: allow Full Disk Access](#optional-allow-full-disk-access).
+MacDirStat doesn't need Full Disk Access to run; the permission only lets it measure folders that macOS protects, such as Mail, Messages, and other apps' data. Without it, protected folder contents are skipped and marked as incomplete, so totals can come out lower than the space actually in use. MacDirStat only reads file information and has no networking code, so granting access doesn't send anything anywhere. See [Optional: allow Full Disk Access](#optional-allow-full-disk-access).
 
 ### Why doesn't MacDirStat's total match macOS Storage settings?
 
 MacDirStat adds up the files it can read, which can differ from the numbers macOS shows:
 
-- Protected folders are counted as empty unless you grant Full Disk Access.
+- Protected or cloud-only folders that cannot be enumerated are marked as incomplete; their contents are not included.
 - APFS snapshots, including local Time Machine snapshots, take up space but aren't regular files, so a file scan can't see them.
 - Hard-linked files are counted once, and symbolic links aren't followed.
 - A scan stays on one volume: other drives or volumes mounted inside the scanned folder aren't included.
 - File Size and Allocated Size can differ a lot (see the next question).
+- APFS clones can share storage blocks while reporting allocated sizes for each file. Summed allocated sizes are not an exact measurement of unique physical blocks or how much deleting files would free.
 
 ### What's the difference between File Size and Allocated Size?
 
-File Size is the size of a file's contents; Allocated Size is the disk space the file actually occupies. Allocated Size can be smaller for compressed or sparse files, such as some virtual machine disk images, and is often slightly larger for small files, because disk space is allocated in whole blocks. Switch between them with the toggle in the toolbar.
+File Size is the size of a file's contents; Allocated Size is the disk space the file actually occupies. Allocated Size can be smaller for compressed or sparse files, such as some virtual machine disk images, and is often slightly larger for small files, because disk space is allocated in whole blocks. Allocated Size is the default for the treemap, folder ordering, and category breakdown. Scan progress always shows allocated space. Switch between them with the toggle in the toolbar.
+
+Online-only cloud files can have a large File Size and little or no Allocated Size. A logical total above your drive capacity does not mean those bytes are stored on your Mac.
+
+### Will scanning download my OneDrive, SharePoint, or iCloud files?
+
+MacDirStat disables dataless-file materialization on each scanning thread using [Apple's recommended I/O policy](https://developer.apple.com/documentation/technotes/tn3150-getting-ready-for-data-less-files). It reads metadata and does not open file contents. Locally enumerated placeholders retain their logical and allocated sizes. Cloud-only folders, or folders that would require materialization to enumerate, are not expanded; the app reports an incomplete scan instead. Already downloaded cloud files are scanned normally. This relies on macOS File Provider/dataless-file support rather than provider names or path-based exclusions.
+
+If a parent folder of the selected scan path is cloud-only, the scan may fail without downloading it. Choose a locally available parent folder instead. Cancel stops scheduling work and cancels the scanner; an already-running filesystem call must return before its worker can exit.
 
 ### What do the colors in the treemap mean?
 
@@ -182,7 +192,7 @@ Zero external dependencies. Pure Swift Package Manager project.
 
 MacDirStat is a SwiftUI app written in Swift 6 with strict concurrency checking. A single `@Observable` `AppState` drives all views.
 
-**Scan pipeline:** the user picks a drive or folder → `ScanCoordinator` starts `FileScanner` → `FileScanner` walks the tree with `opendir`/`readdir`/`fstatat`, scanning subdirectories in parallel with a task group, skipping symlinks and other volumes, and deduplicating inodes so hard links and firmlinks are counted once → it builds the `FileNode` tree and streams progress as `ScanEvent`s over an `AsyncStream` → `ScanCoordinator` throttles UI updates to every 50 ms → `TreemapLayoutEngine` lays out the tree with the squarify algorithm on a background task → a SwiftUI `Canvas` renders it.
+**Scan pipeline:** the user picks a drive or folder → `ScanCoordinator` starts `FileScanner` → `FileScanner` reads metadata with `getattrlistbulk`, using `fstatat` for directory/mount identities and missing attributes, and `readdir`/`fstatat` on unsupported filesystems. At most four directories run in parallel, symlinks and other volumes are skipped, and inode deduplication counts hard links and firmlinks once → it builds the `FileNode` tree and streams progress as `ScanEvent`s over an `AsyncStream` → `ScanCoordinator` throttles UI updates to every 50 ms → `TreemapLayoutEngine` lays out the tree with the squarify algorithm on a background task → a SwiftUI `Canvas` renders it.
 
 ### Project structure
 
@@ -198,7 +208,11 @@ Sources/MacDirStat/
 
 ## Contributing
 
-Contributions are welcome. [Open an issue](https://github.com/phalladar/MacDirStat/issues) to report a bug or suggest a feature, or submit a pull request. CI builds every pull request with `swift build`.
+Contributions are welcome. [Open an issue](https://github.com/phalladar/MacDirStat/issues) to report a bug or suggest a feature, or submit a pull request. CI builds and tests every pull request with `swift build` and `swift test`.
+
+Run the regression suite with `swift test`. To also verify a real cloud-only directory without downloading it, set `MACDIRSTAT_CLOUD_TEST_PATH` to a File Provider placeholder directory when running `swift test`. Set `MACDIRSTAT_SCAN_TEST_PATH` to a folder to run a metadata-only integration scan and print a size/count summary.
+
+For a controlled enumeration comparison, run `MACDIRSTAT_BENCHMARK_PATH=/path/to/stable/folder swift test -c release --filter compareDirectoryEnumerationPerformance --no-parallel`. It alternates POSIX and bulk reads and checks that file/folder counts, sizes, cloud-only files and incomplete folders agree. Use a stable tree and report each timing; changing files and filesystem cache warmth affect results. This benchmark does not open file contents.
 
 ## License
 
