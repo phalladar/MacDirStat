@@ -27,6 +27,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN_DIR/MacDirStat" "$APP/Contents/MacOS/"
 cp Sources/MacDirStat/AppIcon.icns "$APP/Contents/Resources/"
+cp LICENSE "$APP/Contents/Resources/LICENSE.txt"
 # Bundle.module looks in Contents/Resources first, so keep SPM resources working inside the app.
 cp -R "$BIN_DIR/MacDirStat_MacDirStat.bundle" "$APP/Contents/Resources/"
 

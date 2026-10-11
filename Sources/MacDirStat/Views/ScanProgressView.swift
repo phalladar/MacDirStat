@@ -24,7 +24,7 @@ struct ScanProgressView: View {
                     }
 
                     Label {
-                        Text(ByteFormatter.string(from: byteCount))
+                        Text("\(ByteFormatter.string(from: byteCount)) allocated")
                     } icon: {
                         Image(systemName: "internaldrive.fill")
                     }
@@ -38,6 +38,12 @@ struct ScanProgressView: View {
                     .truncationMode(.middle)
                     .frame(maxWidth: 400)
             }
+
+            Text("Cloud-only folder contents are not downloaded. Skipped folders are reported in the results.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 400)
 
             Button("Cancel", role: .cancel, action: onCancel)
                 .keyboardShortcut(.cancelAction)

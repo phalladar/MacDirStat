@@ -31,7 +31,7 @@ final class AppState {
     var treemapRoot: FileNode?
     var selectedNode: FileNode?
     var breadcrumbs: [FileNode] = []
-    var sizeMetric: SizeMetric = .fileSize
+    var sizeMetric: SizeMetric = .allocatedSize
     var showInspector: Bool = true
 
     var isScanning: Bool {

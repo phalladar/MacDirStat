@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DetailPanelView: View {
     let node: FileNode
+    let sizeMetric: SizeMetric
 
     var body: some View {
         ScrollView {
@@ -35,6 +36,24 @@ struct DetailPanelView: View {
                     LabeledContent("Directories", value: "\(node.directoryCount.formatted())")
                 }
 
+                if node.isDataless {
+                    Label("Cloud-only: contents are not stored locally", systemImage: "icloud")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if node.cloudOnlyFileCount > 0 {
+                    LabeledContent("Cloud-only files", value: node.cloudOnlyFileCount.formatted())
+                }
+                if let issue = node.scanIssue {
+                    Text(issue).font(.caption).foregroundStyle(.orange)
+                }
+                if node.unscannedDirectoryCount > 0 || node.totalUnavailableEntryCount > 0 {
+                    Label("Incomplete scan", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                    Text("\(node.unscannedDirectoryCount.formatted()) folders and \(node.totalUnavailableEntryCount.formatted()) entries could not be fully scanned. Totals include only accessible metadata.")
+                        .font(.caption)
+                }
+
                 if let date = node.modificationDate {
                     LabeledContent("Modified", value: date.formatted(date: .abbreviated, time: .shortened))
                 }
@@ -46,7 +65,7 @@ struct DetailPanelView: View {
                     Text("Category Breakdown")
                         .font(.headline)
 
-                    let breakdown = node.categoryBreakdown()
+                    let breakdown = node.categoryBreakdown(metric: sizeMetric)
                     let total = max(1, breakdown.reduce(0) { $0 + $1.size })
 
                     // Bar chart
