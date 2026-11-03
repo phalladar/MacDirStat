@@ -8,6 +8,14 @@ enum DirectoryEnumerationMode: Sendable {
 struct BulkDirectoryEntry {
     let name: String
     let metadata: Darwin.stat
+    var clone: CloneInfo? = nil
+}
+
+/// An APFS clone shares its blocks with other files. st_blocks reports every
+/// shared block for each copy, so the scanner counts the shared part once.
+struct CloneInfo: Sendable {
+    let id: UInt64
+    let privateBytes: Int64
 }
 
 enum BulkDirectoryBatch {
@@ -32,12 +40,14 @@ struct BulkDirectoryReader {
                                 UInt32(ATTR_CMN_FLAGS), UInt32(ATTR_CMN_FILEID)]
         attributes.commonattr = common.reduce(0, |)
         attributes.fileattr = UInt32(ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATALENGTH)
+        // With FSOPT_ATTR_CMN_EXTENDED, forkattr selects extended common attributes.
+        attributes.forkattr = UInt32(ATTR_CMNEXT_PRIVATESIZE | ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
     }
 
     mutating func next(fd: Int32) throws -> BulkDirectoryBatch {
         let count = buffer.withUnsafeMutableBytes {
             getattrlistbulk(fd, &attributes, $0.baseAddress!, $0.count,
-                            UInt64(FSOPT_PACK_INVAL_ATTRS | FSOPT_RETURN_REALDEV))
+                            UInt64(FSOPT_PACK_INVAL_ATTRS | FSOPT_RETURN_REALDEV | FSOPT_ATTR_CMN_EXTENDED))
         }
         if count < 0 {
             let code = errno
@@ -125,6 +135,17 @@ func decodeBulkDirectoryEntry(_ record: UnsafeRawBufferPointer, fd: Int32) throw
         metadata.st_flags = flags
         metadata.st_blocks = allocated / 512
         metadata.st_size = logical
+        // Packed after the file attributes; zero-filled when not returned.
+        let privateSize = try read(off_t.self)
+        let cloneID = try read(UInt64.self)
+        let cloneCount = try read(UInt32.self)
+        guard start >= offset else { throw BulkMetadataError.malformed }
+        let cloneFields = UInt32(ATTR_CMNEXT_PRIVATESIZE | ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
+        if returned.forkattr & cloneFields == cloneFields, cloneCount > 1,
+           privateSize >= 0, privateSize <= allocated {
+            return BulkDirectoryEntry(name: String(cString: name), metadata: metadata,
+                                      clone: CloneInfo(id: cloneID, privateBytes: privateSize))
+        }
     } else {
         // Directory attributes describe the underlying mount/firmlink, not its
         // target. fstatat preserves stat's volume, inode and directory-size rules.

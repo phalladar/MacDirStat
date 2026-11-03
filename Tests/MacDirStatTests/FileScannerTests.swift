@@ -323,3 +323,30 @@ func localIntegrationScan() async throws {
     #expect(bytes == root.totalAllocatedSize)
     print("Scan summary: files=\(root.fileCount), directories=\(root.directoryCount), logicalBytes=\(root.totalSize), allocatedBytes=\(bytes), cloudOnlyFiles=\(root.cloudOnlyFileCount), unscannedDirectories=\(root.unscannedDirectoryCount), unavailableEntries=\(root.totalUnavailableEntryCount), elapsed=\(ContinuousClock.now - started)")
 }
+
+@Test func apfsClonesShareTheirBlocksOnce() async throws {
+    let fixture = try Fixture()
+    defer { fixture.remove() }
+    let original = fixture.root.appendingPathComponent("original.bin")
+    try Data((0..<1_048_576).map { UInt8(truncatingIfNeeded: $0 &* 31) }).write(to: original)
+    let copyBytes = Int64(try fixture.metadata(original).st_blocks) * 512
+    for folder in ["a", "b", "c"] {
+        let directory = fixture.root.appendingPathComponent(folder)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for index in 0..<3 {
+            let clone = directory.appendingPathComponent("clone-\(index).bin")
+            guard clonefile(original.path, clone.path, 0) == 0 else {
+                return // The temporary volume does not support clones (not APFS).
+            }
+        }
+    }
+    let (root, bytes) = try await completedScan(fixture.root.path)
+    func fileBytes(_ node: FileNode, _ size: (FileNode) -> Int64) -> Int64 {
+        node.isDirectory ? node.children.reduce(0) { $0 + fileBytes($1, size) } : size(node)
+    }
+    #expect(root.fileCount == 10)
+    #expect(fileBytes(root, \.allocatedSize) == copyBytes)
+    // Logical size still reports every copy in full.
+    #expect(fileBytes(root, \.ownSize) == 10 * 1_048_576)
+    #expect(bytes == root.totalAllocatedSize)
+}
