@@ -5,7 +5,8 @@ struct DetailPanelView: View {
     let sizeMetric: SizeMetric
 
     var body: some View {
-        ScrollView {
+        // Not a ScrollView: in the inspector its clicks land a toolbar's height above what it draws.
+        List {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
                 HStack(spacing: 10) {
@@ -122,7 +123,11 @@ struct DetailPanelView: View {
                 }
                 .buttonStyle(.bordered)
             }
-            .padding()
+            .padding(.vertical, 8)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 }
