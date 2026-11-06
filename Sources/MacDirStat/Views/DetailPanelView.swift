@@ -5,7 +5,8 @@ struct DetailPanelView: View {
     let sizeMetric: SizeMetric
 
     var body: some View {
-        // Not a ScrollView: in the inspector its clicks land a toolbar's height above what it draws.
+        // A List, not a ScrollView: on macOS 27, binaries that record SDK 15 (local SwiftPM builds)
+        // ignore clicks on ScrollView content in the inspector. SDK 26 builds (CI) work either way.
         List {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
@@ -124,6 +125,7 @@ struct DetailPanelView: View {
                 .buttonStyle(.bordered)
             }
             .padding(.vertical, 8)
+            .padding(.horizontal, 8) // With the List's own 8 pt inset, keeps the 16 pt side margins.
             .listRowSeparator(.hidden)
             .listRowBackground(Color.clear)
         }
