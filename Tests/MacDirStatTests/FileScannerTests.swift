@@ -109,13 +109,14 @@ private func completedScan(_ path: String, limit: Int = 4,
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MACDIRSTAT_BENCHMARK_PATH"] != nil))
 func compareDirectoryEnumerationPerformance() async throws {
     let path = try #require(ProcessInfo.processInfo.environment["MACDIRSTAT_BENCHMARK_PATH"])
-    var reference: (files: Int, directories: Int, logical: Int64, allocated: Int64, cloud: Int, incomplete: Int)?
+    // Allocated size is left out: only the bulk reader sees APFS clones, so .posix counts them in full.
+    var reference: (files: Int, directories: Int, logical: Int64, cloud: Int, incomplete: Int)?
     // Alternate order so both implementations see warm and cold metadata caches.
     for mode in [DirectoryEnumerationMode.posix, .automatic, .automatic, .posix] {
         let started = ContinuousClock.now
         let (root, _) = try await completedScan(path, mode: mode)
         let elapsed = ContinuousClock.now - started
-        let totals = (root.fileCount, root.directoryCount, root.totalSize, root.totalAllocatedSize,
+        let totals = (root.fileCount, root.directoryCount, root.totalSize,
                       root.cloudOnlyFileCount, root.unscannedDirectoryCount)
         if let reference {
             #expect(totals == reference)

@@ -63,17 +63,12 @@ private final class ScanState: Sendable {
     }
 
     /// Returns the metadata to store, or nil for an inode already counted.
-    /// A clone keeps its private blocks; the blocks it shares with other clones
-    /// are charged once, to the first member of its clone group seen in the scan.
-    func record(_ metadata: Darwin.stat, clone: CloneInfo? = nil) -> Darwin.stat? {
+    /// A clone group's blocks are charged once, to the first member seen in the scan.
+    func record(_ metadata: Darwin.stat, cloneID: UInt64? = nil) -> Darwin.stat? {
         lock.withLock { state in
             guard state.seenInodes.insert(UInt64(metadata.st_ino)).inserted else { return nil }
             var counted = metadata
-            if let clone {
-                let allocated = Int64(metadata.st_blocks) * 512
-                let shared = state.seenClones.insert(clone.id).inserted ? allocated - clone.privateBytes : 0
-                counted.st_blocks = blkcnt_t((clone.privateBytes + shared + 511) / 512)
-            }
+            if let cloneID, !state.seenClones.insert(cloneID).inserted { counted.st_blocks = 0 }
             if counted.st_mode & S_IFMT == S_IFREG { state.fileCount += 1 }
             state.byteCount += Int64(counted.st_blocks) * 512
             return counted
@@ -196,11 +191,11 @@ private func scanDirectory(
             return result
         }
 
-        func append(name: String, metadata: Darwin.stat, clone: CloneInfo? = nil) {
+        func append(name: String, metadata: Darwin.stat, cloneID: UInt64? = nil) {
             guard metadata.st_dev == state.rootDevice else { return }
             let type = metadata.st_mode & S_IFMT
             guard type == S_IFDIR || type == S_IFREG,
-                  let metadata = state.record(metadata, clone: clone) else { return }
+                  let metadata = state.record(metadata, cloneID: cloneID) else { return }
             let child = FileNode(name: name, metadata: metadata)
             result.children.append(child)
             if child.isDirectory {
@@ -216,7 +211,7 @@ private func scanDirectory(
                 switch try reader.next(fd: fd) {
                 case .entries(let entries, let unavailable):
                     result.unavailableEntries += unavailable
-                    for entry in entries { append(name: entry.name, metadata: entry.metadata, clone: entry.clone) }
+                    for entry in entries { append(name: entry.name, metadata: entry.metadata, cloneID: entry.cloneID) }
                     if let progress = state.progress(path: job.path) { continuation.yield(progress) }
                 case .end: return result
                 case .failure(let code):

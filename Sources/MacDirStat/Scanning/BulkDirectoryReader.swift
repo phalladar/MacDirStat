@@ -8,14 +8,9 @@ enum DirectoryEnumerationMode: Sendable {
 struct BulkDirectoryEntry {
     let name: String
     let metadata: Darwin.stat
-    var clone: CloneInfo? = nil
-}
-
-/// An APFS clone shares its blocks with other files. st_blocks reports every
-/// shared block for each copy, so the scanner counts the shared part once.
-struct CloneInfo: Sendable {
-    let id: UInt64
-    let privateBytes: Int64
+    /// Set for a full APFS clone (refcount above one). Its st_blocks are all
+    /// shared with the other members of the group, so the scanner counts them once.
+    var cloneID: UInt64? = nil
 }
 
 enum BulkDirectoryBatch {
@@ -41,7 +36,7 @@ struct BulkDirectoryReader {
         attributes.commonattr = common.reduce(0, |)
         attributes.fileattr = UInt32(ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATALENGTH)
         // With FSOPT_ATTR_CMN_EXTENDED, forkattr selects extended common attributes.
-        attributes.forkattr = UInt32(ATTR_CMNEXT_PRIVATESIZE | ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
+        attributes.forkattr = UInt32(ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
     }
 
     mutating func next(fd: Int32) throws -> BulkDirectoryBatch {
@@ -136,15 +131,13 @@ func decodeBulkDirectoryEntry(_ record: UnsafeRawBufferPointer, fd: Int32) throw
         metadata.st_blocks = allocated / 512
         metadata.st_size = logical
         // Packed after the file attributes; zero-filled when not returned.
-        let privateSize = try read(off_t.self)
+        // CLONE_REFCNT counts full clones, so above one the file has no private blocks.
         let cloneID = try read(UInt64.self)
         let cloneCount = try read(UInt32.self)
         guard start >= offset else { throw BulkMetadataError.malformed }
-        let cloneFields = UInt32(ATTR_CMNEXT_PRIVATESIZE | ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
-        if returned.forkattr & cloneFields == cloneFields, cloneCount > 1,
-           privateSize >= 0, privateSize <= allocated {
-            return BulkDirectoryEntry(name: String(cString: name), metadata: metadata,
-                                      clone: CloneInfo(id: cloneID, privateBytes: privateSize))
+        let cloneFields = UInt32(ATTR_CMNEXT_CLONEID | ATTR_CMNEXT_CLONE_REFCNT)
+        if returned.forkattr & cloneFields == cloneFields, cloneCount > 1 {
+            return BulkDirectoryEntry(name: String(cString: name), metadata: metadata, cloneID: cloneID)
         }
     } else {
         // Directory attributes describe the underlying mount/firmlink, not its
