@@ -2,6 +2,7 @@
 
 [![Latest release](https://img.shields.io/github/v/release/phalladar/MacDirStat?label=latest%20release)](https://github.com/phalladar/MacDirStat/releases/latest)
 [![Requires macOS 15 or later](https://img.shields.io/badge/macOS-15%2B-blue?logo=apple)](#what-version-of-macos-does-macdirstat-require)
+[![Homebrew cask](https://img.shields.io/homebrew/cask/v/macdirstat?label=homebrew&logo=homebrew)](https://formulae.brew.sh/cask/macdirstat)
 [![MIT License](https://img.shields.io/github/license/phalladar/MacDirStat)](LICENSE)
 
 **MacDirStat is a free, open-source disk space analyzer for macOS. It scans your Mac and draws every file as a color-coded treemap, so you can see what's taking up space and free up storage.**
@@ -12,11 +13,29 @@ It's a native Mac app inspired by WinDirStat on Windows, with no ads, subscripti
 
 **[Download MacDirStat (.zip)](https://github.com/phalladar/MacDirStat/releases/latest/download/MacDirStat.zip)** · Free · macOS 15 Sequoia or later · Apple silicon and Intel · Notarized by Apple · [All releases](https://github.com/phalladar/MacDirStat/releases)
 
+Or install with [Homebrew](https://formulae.brew.sh/cask/macdirstat):
+
+```bash
+brew install --cask macdirstat
+```
+
 ![MacDirStat showing a treemap of a Mac's startup disk: nested, color-coded rectangles sized by disk usage, with the largest files labeled, next to an inspector panel listing total size, file count, and a breakdown by file type](screenshot.png)
 
 *Each rectangle is a file. Its area is how much space it uses, its color is its file type, and files are grouped inside their folders.*
 
 ## How to install MacDirStat
+
+### Install with Homebrew
+
+If you use [Homebrew](https://brew.sh), run this in Terminal:
+
+```bash
+brew install --cask macdirstat
+```
+
+Homebrew downloads the same signed, notarized release and puts `MacDirStat.app` in your Applications folder. The cask is listed at [formulae.brew.sh/cask/macdirstat](https://formulae.brew.sh/cask/macdirstat).
+
+### Download the app
 
 1. **[Download MacDirStat.zip](https://github.com/phalladar/MacDirStat/releases/latest/download/MacDirStat.zip).**
 2. **Unzip it.** Safari unzips downloads automatically. With another browser, double-click `MacDirStat.zip` in your Downloads folder.
@@ -35,9 +54,15 @@ You only need to do this once: the permission carries over when you update to a 
 
 ### Updating and uninstalling
 
-MacDirStat never connects to the internet, so it doesn't check for updates itself. To update, download the latest zip and replace the app in Applications. To be notified of new versions, click **Watch → Custom → Releases** at the top of this page (requires a GitHub account).
+MacDirStat never connects to the internet, so it doesn't check for updates itself. If you installed with Homebrew, update with:
 
-To uninstall, quit MacDirStat and drag it from Applications to the Trash. It doesn't install background services or helper tools.
+```bash
+brew upgrade --cask macdirstat
+```
+
+Otherwise, download the latest zip and replace the app in Applications. To be notified of new versions, click **Watch → Custom → Releases** at the top of this page (requires a GitHub account).
+
+To uninstall, quit MacDirStat and drag it from Applications to the Trash, or run `brew uninstall --cask macdirstat` if you installed with Homebrew (add `--zap` to also remove its preferences file). It doesn't install background services or helper tools.
 
 ## How to see what's taking up space on your Mac
 
@@ -81,6 +106,10 @@ Yes. MacDirStat is a free, open-source disk space analyzer for macOS that shows 
 ### How do I find what's using disk space on my Mac?
 
 Open MacDirStat, click your startup disk (usually Macintosh HD), and wait for the scan to finish: the largest rectangles in the treemap are the files using the most space. Hover over a rectangle to see its path, then right-click and choose Reveal in Finder to deal with it. macOS also has a built-in overview under **System Settings → General → Storage**, but it sorts usage into broad categories such as Applications, Documents, and System Data rather than showing your whole folder structure. See [How to see what's taking up space on your Mac](#how-to-see-whats-taking-up-space-on-your-mac) for step-by-step instructions.
+
+### Can I install MacDirStat with Homebrew?
+
+Yes. MacDirStat is in the official Homebrew cask repository. Run `brew install --cask macdirstat` to install it and `brew upgrade --cask macdirstat` to update it. See [Install with Homebrew](#install-with-homebrew).
 
 ### Is MacDirStat free?
 
