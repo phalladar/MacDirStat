@@ -91,7 +91,8 @@ final class AppState {
     private func revealInTree(_ node: FileNode) {
         var ancestor = (node.isDirectory ? node : node.parent)?.parent
         while let current = ancestor, current !== rootNode {
-            expandedIDs.insert(current.id)
+            // Any write to an @Observable property notifies observers, even when nothing changes.
+            if !expandedIDs.contains(current.id) { expandedIDs.insert(current.id) }
             ancestor = current.parent
         }
     }
