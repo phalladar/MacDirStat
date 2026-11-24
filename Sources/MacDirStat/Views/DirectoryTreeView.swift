@@ -4,6 +4,7 @@ import SwiftUI
 /// selection made in the treemap can expand the outline down to its folder and scroll to it.
 struct DirectoryTreeView: View {
     let onRescan: (FileNode) -> Void
+    let onTrash: (FileNode) -> Void
     @Environment(AppState.self) private var appState
 
     var body: some View {
@@ -21,8 +22,11 @@ struct DirectoryTreeView: View {
                     Divider()
                     Button("Show in Treemap") { appState.drillDown(to: node) }
                     Divider()
-                    Button("Rescan Folder") { onRescan(node) }
-                        .disabled(appState.busyID != nil)
+                    Group {
+                        Button("Rescan Folder") { onRescan(node) }
+                        Button("Move to Trash…") { onTrash(node) }
+                    }
+                    .disabled(appState.busyID != nil)
                 }
             } primaryAction: { ids in
                 if let node = ids.first.flatMap(appState.visibleDirectory(id:)) {

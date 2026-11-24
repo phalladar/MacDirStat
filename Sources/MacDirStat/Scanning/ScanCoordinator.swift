@@ -61,6 +61,17 @@ final class ScanCoordinator {
         }
     }
 
+    /// Asynchronous: moving a large folder to the Trash can take seconds.
+    func moveToTrash(_ node: FileNode) {
+        guard appState.busyID == nil,
+              FileActions.confirmMoveToTrash(node, sizeMetric: appState.sizeMetric) else { return }
+        appState.busyID = node.id
+        partialTask = Task {
+            defer { appState.busyID = nil }
+            if await FileActions.moveToTrash(node) { await appState.replace(node, with: nil) }
+        }
+    }
+
     func cancel() {
         scanTask?.cancel()
         scanTask = nil

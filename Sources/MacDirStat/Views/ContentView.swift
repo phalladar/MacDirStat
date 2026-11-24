@@ -12,7 +12,10 @@ struct ContentView: View {
 
         NavigationSplitView {
             if appState.rootNode != nil {
-                DirectoryTreeView(onRescan: { node in coordinator?.rescan(node) })
+                DirectoryTreeView(
+                    onRescan: { node in coordinator?.rescan(node) },
+                    onTrash: { node in coordinator?.moveToTrash(node) }
+                )
                     .navigationSplitViewColumnWidth(min: 200, ideal: 300, max: 400)
             } else {
                 Text("No data")
@@ -68,8 +71,12 @@ struct ContentView: View {
                                 onDrillDown: { node in
                                     appState.drillDown(to: node)
                                 },
+                                onTrash: { node in
+                                    coordinator?.moveToTrash(node)
+                                },
                                 sizeMetric: appState.sizeMetric,
-                                treeVersion: appState.treeVersion
+                                treeVersion: appState.treeVersion,
+                                isBusy: appState.busyID != nil
                             )
                         }
                     }

@@ -5,8 +5,10 @@ struct TreemapView: View {
     let selectedNode: FileNode?
     let onSelect: (FileNode) -> Void
     let onDrillDown: (FileNode) -> Void
+    let onTrash: (FileNode) -> Void
     let sizeMetric: SizeMetric
     let treeVersion: Int
+    let isBusy: Bool
     @Environment(AppState.self) private var appState
 
     @State private var items: [TreemapItem] = []
@@ -96,6 +98,11 @@ struct TreemapView: View {
                         Button("Drill Down into \(target.name)") {
                             onDrillDown(target)
                         }
+                    }
+                    if item.node.parent != nil {
+                        Divider()
+                        Button("Move to Trash…") { onTrash(item.node) }
+                            .disabled(isBusy)
                     }
                 }
             }
