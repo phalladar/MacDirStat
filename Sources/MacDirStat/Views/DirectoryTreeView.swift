@@ -86,12 +86,17 @@ struct DirectoryRow: View {
             Text(node.name)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .layoutPriority(1)
 
             Spacer()
 
+            SizeSparkline(node: node, sizeMetric: sizeMetric)
+
             Text(ByteFormatter.string(from: node.size(for: sizeMetric)))
                 .font(.caption)
+                .monospacedDigit()
                 .foregroundStyle(.tertiary)
+                .frame(minWidth: 52, alignment: .trailing)
         }
     }
 }

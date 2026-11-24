@@ -13,7 +13,7 @@ struct ContentView: View {
         NavigationSplitView {
             if appState.rootNode != nil {
                 DirectoryTreeView()
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 400)
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 300, max: 400)
             } else {
                 Text("No data")
                     .foregroundStyle(.secondary)
