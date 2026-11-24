@@ -2,13 +2,15 @@ import SwiftUI
 
 struct TreemapView: View {
     let root: FileNode
+    let selectedNode: FileNode?
     let onSelect: (FileNode) -> Void
     let onDrillDown: (FileNode) -> Void
     let sizeMetric: SizeMetric
 
     @State private var items: [TreemapItem] = []
     @State private var hoveredItemID: Int?
-    @State private var selectedItemID: Int?
+    /// Item index by node, so the shared selection maps to its rectangle without a search.
+    @State private var itemIndexByNode: [ObjectIdentifier: Int] = [:]
     @State private var lastSize: CGSize = .zero
     @State private var layoutTask: Task<Void, Never>?
     @State private var zoomScale: CGFloat = 1.0
@@ -21,18 +23,35 @@ struct TreemapView: View {
         return items.first { $0.id == id }?.node
     }
 
+    /// The selected node's rectangle, or its nearest ancestor's when the node itself is too
+    /// small or too deep to have been laid out.
+    private var selectedItemID: Int? {
+        var node = selectedNode
+        while let current = node {
+            if let index = itemIndexByNode[ObjectIdentifier(current)] { return index }
+            node = current.parent
+        }
+        return nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
         GeometryReader { geometry in
             ZStack {
-                // Base treemap — only redraws when items or selection change
+                // Base treemap — only redraws when items change
                 TreemapBaseCanvas(
                     items: items,
-                    selectedItemID: selectedItemID,
                     zoomScale: zoomScale,
                     panOffset: panOffset,
                     showLabels: showLabels,
                     sizeMetric: sizeMetric
+                )
+
+                TreemapSelectionOverlay(
+                    items: items,
+                    selectedItemID: selectedItemID,
+                    zoomScale: zoomScale,
+                    panOffset: panOffset
                 )
 
                 // Lightweight hover overlay — redraws only the single highlight rect
@@ -59,7 +78,6 @@ struct TreemapView: View {
             }
             .onTapGesture(count: 1) { location in
                 if let item = hitTestItem(at: screenToContent(location)) {
-                    selectedItemID = item.id
                     onSelect(item.node)
                 }
             }
@@ -67,11 +85,10 @@ struct TreemapView: View {
                 if let hoveredID = hoveredItemID,
                    let item = items.first(where: { $0.id == hoveredID }) {
                     Button("Reveal in Finder") {
-                        revealInFinder(node: item.node)
+                        FileActions.revealInFinder(item.node)
                     }
                     Button("Copy Path") {
-                        NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(item.node.path, forType: .string)
+                        FileActions.copyPath(item.node)
                     }
                     if let target = drillDownTarget(for: item.node) {
                         Divider()
@@ -199,15 +216,12 @@ struct TreemapView: View {
             let engine = TreemapLayoutEngine()
             let bounds = TreemapRect(x: 0, y: 0, width: Double(size.width), height: Double(size.height))
             let newItems = engine.layout(root: root, in: bounds, sizeMetric: metric)
+            let index = Dictionary(uniqueKeysWithValues: newItems.enumerated().map { (ObjectIdentifier($1.node), $0) })
             await MainActor.run {
                 items = newItems
+                itemIndexByNode = index
             }
         }
-    }
-
-    private func revealInFinder(node: FileNode) {
-        let path = node.path
-        NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
     }
 }
 
@@ -216,7 +230,6 @@ struct TreemapView: View {
 /// the hovered item changes.
 private struct TreemapBaseCanvas: View {
     let items: [TreemapItem]
-    let selectedItemID: Int?
     let zoomScale: CGFloat
     let panOffset: CGPoint
     let showLabels: Bool
@@ -227,7 +240,6 @@ private struct TreemapBaseCanvas: View {
             let renderer = TreemapRenderer(
                 items: items,
                 hoveredItemID: nil,
-                selectedItemID: selectedItemID,
                 zoomScale: zoomScale,
                 panOffset: panOffset,
                 showLabels: showLabels,
@@ -259,6 +271,35 @@ private struct TreemapHoverOverlay: View {
             )
             let path = Path(roundedRect: screenRect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1)
             context.fill(path, with: .color(.white.opacity(0.25)))
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private struct TreemapSelectionOverlay: View {
+    let items: [TreemapItem]
+    let selectedItemID: Int?
+    let zoomScale: CGFloat
+    let panOffset: CGPoint
+
+    var body: some View {
+        Canvas { context, size in
+            guard let id = selectedItemID, items.indices.contains(id) else { return }
+            let item = items[id]
+            let rect = CGRect(
+                x: panOffset.x + item.rect.x * zoomScale,
+                y: panOffset.y + item.rect.y * zoomScale,
+                width: item.rect.width * zoomScale,
+                height: item.rect.height * zoomScale
+            )
+            // Item 0 is the treemap root, so there is nothing outside it to dim. A folder outside
+            // the zoomed-in view isn't dimmed around either, or the whole view would go dark.
+            if item.node.isDirectory && id != 0 && rect.intersects(CGRect(origin: .zero, size: size)) {
+                var outside = Path(CGRect(origin: .zero, size: size))
+                outside.addRect(rect)
+                context.fill(outside, with: .color(.black.opacity(0.55)), style: FillStyle(eoFill: true))
+            }
+            context.stroke(Path(rect.insetBy(dx: 1, dy: 1)), with: .color(.white), lineWidth: 2)
         }
         .allowsHitTesting(false)
     }

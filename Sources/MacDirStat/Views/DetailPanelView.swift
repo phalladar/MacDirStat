@@ -110,15 +110,14 @@ struct DetailPanelView: View {
 
                 // Actions
                 Button {
-                    NSWorkspace.shared.selectFile(node.path, inFileViewerRootedAtPath: "")
+                    FileActions.revealInFinder(node)
                 } label: {
                     Label("Reveal in Finder", systemImage: "arrow.right.circle")
                 }
                 .buttonStyle(.bordered)
 
                 Button {
-                    NSPasteboard.general.clearContents()
-                    NSPasteboard.general.setString(node.path, forType: .string)
+                    FileActions.copyPath(node)
                 } label: {
                     Label("Copy Path", systemImage: "doc.on.doc")
                 }

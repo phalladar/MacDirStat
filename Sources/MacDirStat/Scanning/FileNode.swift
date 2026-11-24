@@ -149,6 +149,15 @@ final class FileNode: Identifiable, @unchecked Sendable {
         }
     }
 
+    func isInSubtree(of ancestor: FileNode) -> Bool {
+        var node: FileNode? = self
+        while let current = node {
+            if current === ancestor { return true }
+            node = current.parent
+        }
+        return false
+    }
+
     var directoryChildren: [FileNode] {
         children.filter(\.isDirectory)
     }

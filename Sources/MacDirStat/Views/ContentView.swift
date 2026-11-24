@@ -11,8 +11,8 @@ struct ContentView: View {
         @Bindable var state = appState
 
         NavigationSplitView {
-            if let root = appState.rootNode {
-                DirectoryTreeView(root: root, selectedNode: $state.selectedNode, sizeMetric: appState.sizeMetric)
+            if appState.rootNode != nil {
+                DirectoryTreeView()
                     .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 400)
             } else {
                 Text("No data")
@@ -61,6 +61,7 @@ struct ContentView: View {
                             // Treemap
                             TreemapView(
                                 root: treemapRoot,
+                                selectedNode: appState.selectedNode,
                                 onSelect: { node in
                                     appState.selectedNode = node
                                 },

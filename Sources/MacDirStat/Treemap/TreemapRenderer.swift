@@ -3,7 +3,6 @@ import SwiftUI
 struct TreemapRenderer {
     let items: [TreemapItem]
     let hoveredItemID: Int?
-    let selectedItemID: Int?
     let zoomScale: CGFloat
     let panOffset: CGPoint
     let showLabels: Bool
@@ -34,15 +33,6 @@ struct TreemapRenderer {
             // Hover highlight
             if item.id == hoveredItemID {
                 context.fill(path, with: .color(.white.opacity(0.25)))
-            }
-
-            // Selection highlight
-            if item.id == selectedItemID {
-                context.stroke(
-                    Path(screenRect.insetBy(dx: 1, dy: 1)),
-                    with: .color(.white),
-                    lineWidth: 2
-                )
             }
 
             // Name label — font stays at 10pt regardless of zoom
