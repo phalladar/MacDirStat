@@ -36,6 +36,12 @@ final class AppState {
     var sizeMetric: SizeMetric = .allocatedSize
     var showInspector: Bool = true
     private(set) var expandedIDs: Set<UInt64> = []
+    /// Bumped when part of the tree is replaced in place, so views showing its totals refresh.
+    private(set) var treeVersion = 0
+    /// The item a background change is working on. One at a time, so changes can't overlap in the tree.
+    var busyID: UInt64?
+    /// The treemap layout reads the tree off the main thread; replace(_:with:) waits for it.
+    @ObservationIgnored var layoutTask: Task<Void, Never>?
 
     var isScanning: Bool {
         if case .scanning = scanStatus { return true }
@@ -95,6 +101,37 @@ final class AppState {
             if !expandedIDs.contains(current.id) { expandedIDs.insert(current.id) }
             ancestor = current.parent
         }
+    }
+
+    /// Splices a fresh scan of `old` into the tree, or removes it when `new` is nil, updating only its ancestors.
+    func replace(_ old: FileNode, with new: FileNode?) async {
+        while let task = layoutTask {
+            await task.value
+            if task == layoutTask { break }
+        }
+        // A new scan may have replaced the whole tree meanwhile.
+        guard let root = rootNode, old.isInSubtree(of: root), let parent = old.parent,
+              let index = parent.children.firstIndex(where: { $0 === old }) else { return }
+        if let new {
+            new.name = old.name
+            new.parent = parent
+            parent.children[index] = new
+        } else {
+            parent.children.remove(at: index)
+        }
+        var ancestor: FileNode? = parent
+        while let current = ancestor {
+            current.computeAggregates(recursing: false)
+            current.children.sort { $0.totalAllocatedSize > $1.totalAllocatedSize }
+            ancestor = current.parent
+        }
+        let replacement = new ?? parent
+        if selectedNode?.isInSubtree(of: old) == true { selectedNode = replacement }
+        if treemapRoot?.isInSubtree(of: old) == true {
+            treemapRoot = replacement
+            rebuildBreadcrumbs()
+        }
+        treeVersion += 1
     }
 
     func drillDown(to node: FileNode) {

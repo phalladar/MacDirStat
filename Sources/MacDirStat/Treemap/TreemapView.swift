@@ -6,13 +6,14 @@ struct TreemapView: View {
     let onSelect: (FileNode) -> Void
     let onDrillDown: (FileNode) -> Void
     let sizeMetric: SizeMetric
+    let treeVersion: Int
+    @Environment(AppState.self) private var appState
 
     @State private var items: [TreemapItem] = []
     @State private var hoveredItemID: Int?
     /// Item index by node, so the shared selection maps to its rectangle without a search.
     @State private var itemIndexByNode: [ObjectIdentifier: Int] = [:]
     @State private var lastSize: CGSize = .zero
-    @State private var layoutTask: Task<Void, Never>?
     @State private var zoomScale: CGFloat = 1.0
     @State private var panOffset: CGPoint = .zero
     @State private var showLabels: Bool = true
@@ -128,6 +129,9 @@ struct TreemapView: View {
             .onChange(of: sizeMetric) {
                 recomputeLayout(size: geometry.size)
             }
+            .onChange(of: treeVersion) {
+                recomputeLayout(size: geometry.size)
+            }
         }
         .background(.black)
 
@@ -211,12 +215,17 @@ struct TreemapView: View {
         lastSize = size
 
         let metric = sizeMetric
-        layoutTask?.cancel()
-        layoutTask = Task.detached { [root] in
+        let previous = appState.layoutTask
+        previous?.cancel()
+        appState.layoutTask = Task.detached { [root] in
+            // One layout reads the tree at a time, so replace(_:with:) only waits for the last.
+            await previous?.value
+            guard !Task.isCancelled else { return }
             let engine = TreemapLayoutEngine()
             let bounds = TreemapRect(x: 0, y: 0, width: Double(size.width), height: Double(size.height))
             let newItems = engine.layout(root: root, in: bounds, sizeMetric: metric)
             let index = Dictionary(uniqueKeysWithValues: newItems.enumerated().map { (ObjectIdentifier($1.node), $0) })
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 items = newItems
                 itemIndexByNode = index

@@ -59,7 +59,7 @@ struct TreemapLayoutEngine: Sendable {
         items: inout [TreemapItem],
         nextID: inout Int
     ) {
-        guard bounds.area >= minPixelArea else { return }
+        guard bounds.area >= minPixelArea, !Task.isCancelled else { return }
 
         // Leaf node (file or empty/childless directory)
         if !node.isDirectory || node.children.isEmpty || depth >= maxDepth {

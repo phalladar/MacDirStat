@@ -6,6 +6,14 @@ enum FileActions {
         NSWorkspace.shared.selectFile(node.path, inFileViewerRootedAtPath: "")
     }
 
+    static func showError(_ message: String, _ detail: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.runModal()
+    }
+
     static func copyPath(_ node: FileNode) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()

@@ -3,6 +3,8 @@ import SwiftUI
 struct DetailPanelView: View {
     let node: FileNode
     let sizeMetric: SizeMetric
+    /// Totals change in place (see AppState.replace); a new value redraws the panel.
+    let treeVersion: Int
 
     var body: some View {
         // A List, not a ScrollView: on macOS 27, binaries that record SDK 15 (local SwiftPM builds)

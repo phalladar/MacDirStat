@@ -369,3 +369,35 @@ func localIntegrationScan() async throws {
     #expect(fileBytes(root, \.ownSize) == 10 * 1_048_576)
     #expect(bytes == root.totalAllocatedSize)
 }
+
+@MainActor @Test func replacingASubtreeUpdatesItsAncestors() async {
+    let root = FileNode(inode: 1, name: "/", isDirectory: true)
+    let a = FileNode(inode: 2, name: "a", isDirectory: true)
+    let b = FileNode(inode: 3, name: "b", isDirectory: true)
+    let video = FileNode(inode: 4, name: "x.mp4", isDirectory: false, allocatedSize: 8192, category: .video)
+    root.addChild(a)
+    root.addChild(b)
+    a.addChild(video)
+    b.addChild(FileNode(inode: 5, name: "y.jpg", isDirectory: false, allocatedSize: 4096, category: .images))
+    root.computeAggregates()
+    let state = AppState()
+    state.setScanCompleted(root: root)
+    state.selectedNode = video
+    state.treemapRoot = a
+
+    // A rescan of "a" comes back as a new root named by its full path.
+    let fresh = FileNode(inode: 2, name: "/a", isDirectory: true)
+    fresh.addChild(FileNode(inode: 6, name: "z.mp4", isDirectory: false, allocatedSize: 16384, category: .video))
+    fresh.computeAggregates()
+    await state.replace(a, with: fresh)
+    #expect(fresh.name == "a" && fresh.parent === root)
+    #expect(root.totalAllocatedSize == 20480)
+    #expect(root.categoryBreakdown().map(\.size) == [16384, 4096])
+    #expect(state.selectedNode === fresh && state.treemapRoot === fresh)
+
+    state.selectedNode = b
+    await state.replace(b, with: nil)
+    #expect(root.children.map(\.name) == ["a"])
+    #expect(root.totalAllocatedSize == 16384 && root.directoryCount == 2)
+    #expect(state.selectedNode === root)
+}

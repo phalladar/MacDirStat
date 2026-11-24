@@ -4,6 +4,7 @@ import Foundation
 final class ScanCoordinator {
     private let appState: AppState
     private var scanTask: Task<Void, Never>?
+    private var partialTask: Task<Void, Never>?
 
     init(appState: AppState) {
         self.appState = appState
@@ -44,8 +45,26 @@ final class ScanCoordinator {
         }
     }
 
+    func rescan(_ folder: FileNode) {
+        guard appState.busyID == nil else { return }
+        appState.busyID = folder.id
+        let scanner = FileScanner(rootPath: folder.path)
+        partialTask = Task {
+            defer { appState.busyID = nil }
+            for await event in scanner.scan() {
+                switch event {
+                case let .completed(root): await appState.replace(folder, with: root)
+                case let .error(message): FileActions.showError("Couldn't rescan “\(folder.name)”", message)
+                case .progress: break
+                }
+            }
+        }
+    }
+
     func cancel() {
         scanTask?.cancel()
         scanTask = nil
+        partialTask?.cancel()
+        partialTask = nil
     }
 }
