@@ -99,6 +99,10 @@ struct ContentView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .onExitCommand {
+            // Esc selects the folder the treemap shows, which clears the selection dimming.
+            if let root = appState.treemapRoot { appState.selectedNode = root }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {

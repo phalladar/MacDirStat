@@ -36,10 +36,7 @@ struct DirectoryTreeView: View {
         Binding(
             get: { appState.selectedDirectory?.id },
             set: { id in
-                // A file picked in the treemap selects its folder's row; keep the file selected
-                // unless a different folder is picked.
-                guard let id, id != appState.selectedDirectory?.id,
-                      let node = appState.visibleDirectory(id: id) else { return }
+                guard let id, let node = appState.visibleDirectory(id: id) else { return }
                 appState.selectFromTree(node)
             }
         )
