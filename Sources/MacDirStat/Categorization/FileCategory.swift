@@ -14,6 +14,8 @@ enum FileCategory: String, CaseIterable, Sendable, Identifiable {
 
     var id: String { rawValue }
 
+    var index: Int { Self.allCases.firstIndex(of: self)! }
+
     var displayName: String {
         switch self {
         case .documents: "Documents"

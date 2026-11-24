@@ -325,6 +325,24 @@ func localIntegrationScan() async throws {
     print("Scan summary: files=\(root.fileCount), directories=\(root.directoryCount), logicalBytes=\(root.totalSize), allocatedBytes=\(bytes), cloudOnlyFiles=\(root.cloudOnlyFileCount), unscannedDirectories=\(root.unscannedDirectoryCount), unavailableEntries=\(root.totalUnavailableEntryCount), elapsed=\(ContinuousClock.now - started)")
 }
 
+@Test func categoryBreakdownSumsNestedFolders() {
+    let root = FileNode(inode: 1, name: "/", isDirectory: true)
+    let folder = FileNode(inode: 2, name: "media", isDirectory: true)
+    root.addChild(folder)
+    root.addChild(FileNode(inode: 3, name: "a.mp4", isDirectory: false,
+                           ownSize: 10, allocatedSize: 4096, category: .video))
+    folder.addChild(FileNode(inode: 4, name: "b.mp4", isDirectory: false,
+                             ownSize: 20, allocatedSize: 8192, category: .video))
+    folder.addChild(FileNode(inode: 5, name: "c.jpg", isDirectory: false,
+                             ownSize: 5, allocatedSize: 4096, category: .images))
+    root.computeAggregates()
+    let allocated = root.categoryBreakdown()
+    #expect(allocated.map(\.category) == [.video, .images])
+    #expect(allocated.map(\.size) == [12288, 4096])
+    #expect(root.categoryBreakdown(metric: .fileSize).map(\.size) == [30, 5])
+    #expect(folder.categoryBreakdown().map(\.size) == [8192, 4096])
+}
+
 @Test func apfsClonesShareTheirBlocksOnce() async throws {
     let fixture = try Fixture()
     defer { fixture.remove() }

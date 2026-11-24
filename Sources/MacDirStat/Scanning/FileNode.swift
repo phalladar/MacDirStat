@@ -21,6 +21,9 @@ final class FileNode: Identifiable, @unchecked Sendable {
     private(set) var totalAllocatedSize: Int64 = 0
     private(set) var fileCount: Int = 0
     private(set) var directoryCount: Int = 0
+    // Directories only: file sizes per category, then allocated sizes per category, in
+    // FileCategory.allCases order. One array keeps file nodes within their malloc size class.
+    private var categorySizes: [Int64] = []
 
     var path: String {
         var components: [String] = []
@@ -90,9 +93,18 @@ final class FileNode: Identifiable, @unchecked Sendable {
         var unscanned = scanIssue == nil ? 0 : 1
         var unavailable = unavailableEntryCount
         var cloudFiles = 0
+        let categoryCount = FileCategory.allCases.count
+        var categories = [Int64](repeating: 0, count: categoryCount * 2)
 
         for child in children {
             child.computeAggregates()
+            if child.isDirectory {
+                for index in categories.indices { categories[index] += child.categorySizes[index] }
+            } else {
+                let index = child.category.index
+                categories[index] += child.ownSize
+                categories[categoryCount + index] += child.allocatedSize
+            }
             size += child.totalSize
             allocated += child.totalAllocatedSize
             files += child.fileCount
@@ -109,6 +121,7 @@ final class FileNode: Identifiable, @unchecked Sendable {
         unscannedDirectoryCount = unscanned
         totalUnavailableEntryCount = unavailable
         cloudOnlyFileCount = cloudFiles
+        categorySizes = categories
     }
 
     func sortChildrenBySize(metric: SizeMetric = .allocatedSize) {
@@ -118,21 +131,15 @@ final class FileNode: Identifiable, @unchecked Sendable {
         }
     }
 
+    /// Bytes per category in this directory's subtree, largest first, read from the totals
+    /// computeAggregates stored instead of walking the subtree.
     func categoryBreakdown(metric: SizeMetric = .allocatedSize) -> [(category: FileCategory, size: Int64)] {
-        var breakdown: [FileCategory: Int64] = [:]
-        accumulateCategories(into: &breakdown, metric: metric)
-        return breakdown
-            .sorted { $0.value > $1.value }
-            .map { (category: $0.key, size: $0.value) }
-    }
-
-    private func accumulateCategories(into breakdown: inout [FileCategory: Int64], metric: SizeMetric) {
-        if !isDirectory {
-            breakdown[category, default: 0] += size(for: metric)
-        }
-        for child in children {
-            child.accumulateCategories(into: &breakdown, metric: metric)
-        }
+        let count = FileCategory.allCases.count
+        let totals = metric == .fileSize ? categorySizes.prefix(count) : categorySizes.suffix(count)
+        return zip(FileCategory.allCases, totals)
+            .filter { $0.1 > 0 }
+            .sorted { $0.1 > $1.1 }
+            .map { (category: $0.0, size: $0.1) }
     }
 
     func size(for metric: SizeMetric) -> Int64 {
