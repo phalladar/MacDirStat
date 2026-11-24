@@ -11,9 +11,9 @@ struct ContentView: View {
         @Bindable var state = appState
 
         NavigationSplitView {
-            if let root = appState.rootNode {
-                DirectoryTreeView(root: root, selectedNode: $state.selectedNode, sizeMetric: appState.sizeMetric)
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 260, max: 400)
+            if appState.rootNode != nil {
+                DirectoryTreeView()
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 300, max: 400)
             } else {
                 Text("No data")
                     .foregroundStyle(.secondary)
@@ -61,6 +61,7 @@ struct ContentView: View {
                             // Treemap
                             TreemapView(
                                 root: treemapRoot,
+                                selectedNode: appState.selectedNode,
                                 onSelect: { node in
                                     appState.selectedNode = node
                                 },
@@ -97,6 +98,10 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+        }
+        .onExitCommand {
+            // Esc selects the folder the treemap shows, which clears the selection dimming.
+            if let root = appState.treemapRoot { appState.selectedNode = root }
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
