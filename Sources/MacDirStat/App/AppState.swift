@@ -133,6 +133,8 @@ final class AppState {
             current.children.sort { $0.totalAllocatedSize > $1.totalAllocatedSize }
             ancestor = current.parent
         }
+        // The list held nodes from the old subtree; the walk is pruned to affected branches.
+        skippedFolders = Self.collectSkippedFolders(in: root)
         let replacement = new ?? parent
         if selectedNode?.isInSubtree(of: old) == true { selectedNode = replacement }
         if treemapRoot?.isInSubtree(of: old) == true {

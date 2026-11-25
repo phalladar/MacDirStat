@@ -462,3 +462,28 @@ func localIntegrationScan() async throws {
     cleanRoot.computeAggregates()
     #expect(AppState.collectSkippedFolders(in: cleanRoot).isEmpty)
 }
+
+@MainActor @Test func replacingASubtreeRefreshesSkippedFolders() async {
+    let root = FileNode(inode: 1, name: "/scan", isDirectory: true)
+    let a = FileNode(inode: 2, name: "a", isDirectory: true)
+    let blocked = FileNode(inode: 3, name: "blocked", isDirectory: true)
+    let other = FileNode(inode: 4, name: "other", isDirectory: true)
+    blocked.scanIssue = .privacyProtected
+    other.scanIssue = .permissionDenied
+    root.addChild(a)
+    a.addChild(blocked)
+    root.addChild(other)
+    root.computeAggregates()
+    let state = AppState()
+    state.setScanCompleted(root: root)
+
+    // After granting access, a rescan of "a" reads "blocked" fine.
+    let fresh = FileNode(inode: 2, name: "/scan/a", isDirectory: true)
+    fresh.addChild(FileNode(inode: 3, name: "blocked", isDirectory: true))
+    fresh.computeAggregates()
+    await state.replace(a, with: fresh)
+    #expect(state.skippedFolders.map(\.name) == ["other"])
+
+    await state.replace(other, with: nil)
+    #expect(state.skippedFolders.isEmpty)
+}
