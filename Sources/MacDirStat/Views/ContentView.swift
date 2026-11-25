@@ -54,11 +54,9 @@ struct ContentView: View {
 
                             if let root = appState.rootNode,
                                root.unscannedDirectoryCount > 0 || root.totalUnavailableEntryCount > 0 {
-                                Label("Incomplete scan: \(root.unscannedDirectoryCount.formatted()) folders and \(root.totalUnavailableEntryCount.formatted()) entries were not fully scanned. Select a folder for details.",
-                                      systemImage: "exclamationmark.triangle")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                                    .padding(8)
+                                IncompleteScanBanner(root: root) {
+                                    coordinator?.startScan(path: root.path)
+                                }
                             }
 
                             // Treemap
@@ -156,7 +154,9 @@ struct ContentView: View {
                 .disabled(resetZoom == nil)
 
                 Button {
-                    appState.showInspector.toggle()
+                    // On macOS 27, animating the inspector beside the treemap's .contextMenu
+                    // loops AppKit's constraint pass until it throws. Toggle without animation.
+                    withTransaction(\.disablesAnimations, true) { appState.showInspector.toggle() }
                 } label: {
                     Label("Inspector", systemImage: "sidebar.right")
                 }

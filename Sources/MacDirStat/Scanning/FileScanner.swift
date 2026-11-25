@@ -94,7 +94,7 @@ private struct DirectoryResult: Sendable {
     let job: DirectoryJob
     var children: [FileNode] = []
     var subdirectories: [DirectoryJob] = []
-    var issue: String?
+    var issue: ScanIssue?
     var unavailableEntries = 0
 }
 
@@ -173,13 +173,13 @@ private func scanDirectory(
         // Cloud-only directories have no locally enumerated children. Opening
         // them could fetch a remote listing, so retain a visible placeholder.
         guard !job.node.isDataless else {
-            result.issue = "Cloud-only folder: contents were not downloaded or scanned."
+            result.issue = .cloudOnly
             return result
         }
         // Do not follow a directory replaced with a symlink after enumeration.
         let fd = open(job.path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else {
-            result.issue = directoryError(errno)
+            result.issue = ScanIssue(errno: errno)
             return result
         }
         defer { close(fd) }
@@ -187,7 +187,7 @@ private func scanDirectory(
         guard fstat(fd, &currentStat) == 0,
               currentStat.st_dev == state.rootDevice,
               UInt64(currentStat.st_ino) == job.node.id else {
-            result.issue = "Folder changed during the scan; rescan to measure its contents."
+            result.issue = .changedDuringScan
             return result
         }
 
@@ -215,7 +215,7 @@ private func scanDirectory(
                     if let progress = state.progress(path: job.path) { continuation.yield(progress) }
                 case .end: return result
                 case .failure(let code):
-                    result.issue = directoryError(code)
+                    result.issue = ScanIssue(errno: code)
                     return result
                 case .unsupported: break bulk
                 }
@@ -225,13 +225,13 @@ private func scanDirectory(
         // A fresh descriptor also lets unsupported filesystems use POSIX safely.
         let enumerationFD = openat(fd, ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard enumerationFD >= 0 else {
-            result.issue = directoryError(errno)
+            result.issue = ScanIssue(errno: errno)
             return result
         }
         guard let dir = fdopendir(enumerationFD) else {
             let error = errno
             close(enumerationFD)
-            result.issue = directoryError(error)
+            result.issue = ScanIssue(errno: error)
             return result
         }
         defer { closedir(dir) }
@@ -240,7 +240,7 @@ private func scanDirectory(
             try Task.checkCancellation()
             errno = 0
             guard let entry = readdir(dir) else {
-                if errno != 0 { result.issue = directoryError(errno) }
+                if errno != 0 { result.issue = ScanIssue(errno: errno) }
                 break
             }
             entries += 1
@@ -273,9 +273,3 @@ private func scanDirectory(
     }
 }
 
-private func directoryError(_ code: Int32) -> String {
-    if code == EDEADLK {
-        return "Cloud folder needs a download to enumerate; contents were not scanned."
-    }
-    return "Folder contents could not be scanned: \(String(cString: strerror(code)))."
-}

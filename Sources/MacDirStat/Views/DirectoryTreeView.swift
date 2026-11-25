@@ -96,14 +96,29 @@ struct DirectoryRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: node.scanIssue != nil ? "folder.badge.questionmark" : "folder.fill")
-                .foregroundStyle(.secondary)
-                .font(.system(size: 13))
+            if let issue = node.scanIssue {
+                Image(systemName: "folder.badge.questionmark")
+                    .foregroundStyle(.orange)
+                    .font(.system(size: 13))
+                    .help(issue.message)
+            } else {
+                Image(systemName: "folder.fill")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+            }
 
             Text(node.name)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .layoutPriority(1)
+
+            // Marks the path down to skipped folders so they can be found by expanding.
+            if node.scanIssue == nil, node.unscannedDirectoryCount > 0 || node.totalUnavailableEntryCount > 0 {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.orange)
+                    .help("Contains folders or items that couldn't be read")
+            }
 
             Spacer()
 
