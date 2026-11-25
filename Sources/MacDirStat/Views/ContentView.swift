@@ -146,7 +146,9 @@ struct ContentView: View {
                 .disabled(resetZoom == nil)
 
                 Button {
-                    appState.showInspector.toggle()
+                    // On macOS 27, animating the inspector beside the treemap's .contextMenu
+                    // loops AppKit's constraint pass until it throws. Toggle without animation.
+                    withTransaction(\.disablesAnimations, true) { appState.showInspector.toggle() }
                 } label: {
                     Label("Inspector", systemImage: "sidebar.right")
                 }
