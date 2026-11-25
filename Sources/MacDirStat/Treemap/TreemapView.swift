@@ -20,6 +20,8 @@ struct TreemapView: View {
     @State private var panOffset: CGPoint = .zero
     @State private var showLabels: Bool = true
     @State private var labelDebounce: Task<Void, Never>?
+    /// Key of this view's layout in AppState.layoutTasks.
+    @State private var layoutID = UUID()
 
     private var hoveredNode: FileNode? {
         guard let id = hoveredItemID else { return nil }
@@ -85,26 +87,28 @@ struct TreemapView: View {
                 }
             }
             .contextMenu {
-                if let hoveredID = hoveredItemID,
-                   let item = items.first(where: { $0.id == hoveredID }) {
-                    Button("Reveal in Finder") {
-                        FileActions.revealInFinder(item.node)
-                    }
-                    Button("Copy Path") {
-                        FileActions.copyPath(item.node)
-                    }
-                    if let target = drillDownTarget(for: item.node) {
-                        Divider()
-                        Button("Drill Down into \(target.name)") {
-                            onDrillDown(target)
+                Group {
+                    if let hoveredID = hoveredItemID,
+                       let item = items.first(where: { $0.id == hoveredID }) {
+                        Button("Reveal in Finder", systemImage: "arrow.right.circle") {
+                            FileActions.revealInFinder(item.node)
+                        }
+                        Button("Copy Path", systemImage: "doc.on.doc") {
+                            FileActions.copyPath(item.node)
+                        }
+                        if let target = drillDownTarget(for: item.node) {
+                            Divider()
+                            Button("Drill Down into \(target.name)", systemImage: "square.grid.2x2") {
+                                onDrillDown(target)
+                            }
+                        }
+                        if item.node.parent != nil {
+                            Divider()
+                            MoveToTrashButton(node: item.node, isBusy: isBusy, action: onTrash)
                         }
                     }
-                    if item.node.parent != nil {
-                        Divider()
-                        Button("Move to Trash…") { onTrash(item.node) }
-                            .disabled(isBusy)
-                    }
                 }
+                .labelStyle(.titleAndIcon) // macOS menus show only titles without it
             }
             .overlay {
                 ZoomPanOverlay(
@@ -222,10 +226,10 @@ struct TreemapView: View {
         lastSize = size
 
         let metric = sizeMetric
-        let previous = appState.layoutTask
+        let previous = appState.layoutTasks[layoutID]
         previous?.cancel()
-        appState.layoutTask = Task.detached { [root] in
-            // One layout reads the tree at a time, so replace(_:with:) only waits for the last.
+        appState.layoutTasks[layoutID] = Task.detached { [root] in
+            // One layout per view reads the tree at a time, so replace(_:with:) only waits for the last.
             await previous?.value
             guard !Task.isCancelled else { return }
             let engine = TreemapLayoutEngine()

@@ -40,8 +40,9 @@ final class AppState {
     private(set) var treeVersion = 0
     /// The item a background change is working on. One at a time, so changes can't overlap in the tree.
     var busyID: UInt64?
-    /// The treemap layout reads the tree off the main thread; replace(_:with:) waits for it.
-    @ObservationIgnored var layoutTask: Task<Void, Never>?
+    /// Each treemap's latest layout, keyed by view. Layouts read the tree off the main thread;
+    /// replace(_:with:) waits for all of them. One entry per view, so windows don't cancel each other.
+    @ObservationIgnored var layoutTasks: [UUID: Task<Void, Never>] = [:]
 
     var isScanning: Bool {
         if case .scanning = scanStatus { return true }
@@ -105,10 +106,12 @@ final class AppState {
 
     /// Splices a fresh scan of `old` into the tree, or removes it when `new` is nil, updating only its ancestors.
     func replace(_ old: FileNode, with new: FileNode?) async {
-        while let task = layoutTask {
-            await task.value
-            if task == layoutTask { break }
-        }
+        // A view can start a new layout while we wait, so wait until no task changed.
+        var waited: [UUID: Task<Void, Never>]
+        repeat {
+            waited = layoutTasks
+            for task in waited.values { await task.value }
+        } while waited != layoutTasks
         // A new scan may have replaced the whole tree meanwhile.
         guard let root = rootNode, old.isInSubtree(of: root), let parent = old.parent,
               let index = parent.children.firstIndex(where: { $0 === old }) else { return }
@@ -119,6 +122,9 @@ final class AppState {
         } else {
             parent.children.remove(at: index)
         }
+        // Treemap rects laid out before this still point into the old subtree; detaching it
+        // keeps them from passing the isInSubtree(of: root) checks.
+        old.parent = nil
         var ancestor: FileNode? = parent
         while let current = ancestor {
             current.computeAggregates(recursing: false)
@@ -135,7 +141,8 @@ final class AppState {
     }
 
     func drillDown(to node: FileNode) {
-        guard node.isDirectory else { return }
+        // A treemap rect laid out before replace(_:with:) can point at a detached node.
+        guard node.isDirectory, let root = rootNode, node.isInSubtree(of: root) else { return }
         withAnimation(.spring(duration: 0.3)) {
             treemapRoot = node
             selectedNode = node

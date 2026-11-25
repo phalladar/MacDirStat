@@ -73,9 +73,9 @@ To uninstall, quit MacDirStat and drag it from Applications to the Trash, or run
 5. **Zoom in on crowded areas** with the scroll wheel, a trackpad pinch, or the zoom buttons in the toolbar.
 6. **Drill into a folder.** Double-click any rectangle to show just the folder it's in. The breadcrumb bar above the treemap, or the **Back** button, takes you back up.
 7. **Check folder totals.** The sidebar lists folders sorted largest first. Select a folder to see its size, file count, and breakdown by file type in the inspector on the right, or click a file in the treemap to see its details.
-8. **Act on what you find.** Right-click a file and choose **Reveal in Finder**, then delete it in Finder if you're sure you don't need it. Click **Rescan** in the toolbar to refresh the treemap.
+8. **Act on what you find.** Right-click a file or folder and choose **Move to Trash…**, or **Reveal in Finder** to look at it first. The totals update without a rescan. After changing a folder in Finder, right-click it in the sidebar and choose **Rescan Folder**, or click **Rescan** in the toolbar to scan everything again.
 
-MacDirStat never deletes or moves files itself.
+MacDirStat only moves items to the Trash, after you confirm, so you can restore them from there. It never deletes files permanently, and it never moves cloud-only iCloud items.
 
 ## Features
 
@@ -117,11 +117,11 @@ Yes. MacDirStat is free and open source under the MIT License, with no ads, in-a
 
 ### Is MacDirStat safe? Does it upload my data?
 
-MacDirStat is read-only and works entirely offline: the app contains no networking code, so it can't send your file names or any other data off your Mac. It reads file information such as names, sizes, and dates, not file contents, and it never modifies, moves, or deletes files. Downloads are signed with an Apple Developer ID and notarized by Apple, and the full source code is in this repository for anyone to review.
+MacDirStat works entirely offline: the app contains no networking code, so it can't send your file names or any other data off your Mac. It reads file information such as names, sizes, and dates, not file contents. The only change it makes to your files is moving an item to the Trash when you choose **Move to Trash…** and confirm; it never modifies files or deletes them permanently. Downloads are signed with an Apple Developer ID and notarized by Apple, and the full source code is in this repository for anyone to review.
 
 ### Can MacDirStat delete files?
 
-No. MacDirStat is read-only. To remove something you find, right-click it, choose **Reveal in Finder**, and move it to the Trash in Finder. Then click **Rescan** to update the treemap.
+It can move them to the Trash. Right-click a file or folder in the treemap or the sidebar, choose **Move to Trash…**, and confirm. The totals update right away, and you can restore the item from the Trash. MacDirStat never deletes files permanently, and it doesn't offer Move to Trash for cloud-only iCloud items or folders that contain them; use Finder for those.
 
 ### Does MacDirStat work on Intel Macs?
 

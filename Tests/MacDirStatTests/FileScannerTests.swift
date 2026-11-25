@@ -401,3 +401,32 @@ func localIntegrationScan() async throws {
     #expect(root.totalAllocatedSize == 16384 && root.directoryCount == 2)
     #expect(state.selectedNode === root)
 }
+
+@MainActor @Test func replacedSubtreeIsDetached() async {
+    let root = FileNode(inode: 1, name: "/", isDirectory: true)
+    let a = FileNode(inode: 2, name: "a", isDirectory: true)
+    let video = FileNode(inode: 4, name: "x.mp4", isDirectory: false, allocatedSize: 8192, category: .video)
+    root.addChild(a)
+    a.addChild(video)
+    root.computeAggregates()
+    let state = AppState()
+    state.setScanCompleted(root: root)
+
+    let fresh = FileNode(inode: 2, name: "/a", isDirectory: true)
+    fresh.addChild(FileNode(inode: 4, name: "x.mp4", isDirectory: false, allocatedSize: 8192, category: .video))
+    fresh.computeAggregates()
+    await state.replace(a, with: fresh)
+
+    // A treemap rect laid out before the replace still points at the old node.
+    #expect(!video.isInSubtree(of: root))
+}
+
+@Test func folderWithCloudOnlySubfolderIsNotTrashable() {
+    let projects = FileNode(inode: 1, name: "/Projects", isDirectory: true)
+    let old = FileNode(inode: 2, name: "Old", isDirectory: true, isDataless: true)
+    old.scanIssue = "Cloud-only folder: contents were not downloaded or scanned."
+    projects.addChild(old)
+    projects.computeAggregates()
+    #expect(!projects.hasCloudOnlyContent)
+    #expect(projects.hasUnscannedFolders)
+}

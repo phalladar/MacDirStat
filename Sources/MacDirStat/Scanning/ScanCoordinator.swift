@@ -54,7 +54,13 @@ final class ScanCoordinator {
             for await event in scanner.scan() {
                 switch event {
                 case let .completed(root): await appState.replace(folder, with: root)
-                case let .error(message): FileActions.showError("Couldn't rescan “\(folder.name)”", message)
+                case let .error(message):
+                    // Deleted outside the app since the scan: drop it from the tree.
+                    if FileActions.itemIsGone(folder.path) {
+                        await appState.replace(folder, with: nil)
+                    } else {
+                        FileActions.showError("Couldn't rescan “\(folder.name)”", message)
+                    }
                 case .progress: break
                 }
             }
@@ -63,7 +69,9 @@ final class ScanCoordinator {
 
     /// Asynchronous: moving a large folder to the Trash can take seconds.
     func moveToTrash(_ node: FileNode) {
+        // A treemap rect laid out before a replace can still point at a node no longer in the tree.
         guard appState.busyID == nil,
+              let root = appState.rootNode, node.isInSubtree(of: root),
               FileActions.confirmMoveToTrash(node, sizeMetric: appState.sizeMetric) else { return }
         appState.busyID = node.id
         partialTask = Task {

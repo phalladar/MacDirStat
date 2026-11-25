@@ -16,18 +16,19 @@ struct DirectoryTreeView: View {
             }
             .listStyle(.sidebar)
             .contextMenu(forSelectionType: UInt64.self) { ids in
-                if let node = ids.first.flatMap(appState.visibleDirectory(id:)) {
-                    Button("Reveal in Finder") { FileActions.revealInFinder(node) }
-                    Button("Copy Path") { FileActions.copyPath(node) }
-                    Divider()
-                    Button("Show in Treemap") { appState.drillDown(to: node) }
-                    Divider()
-                    Group {
-                        Button("Rescan Folder") { onRescan(node) }
-                        Button("Move to Trash…") { onTrash(node) }
+                Group {
+                    if let node = ids.first.flatMap(appState.visibleDirectory(id:)) {
+                        Button("Reveal in Finder", systemImage: "arrow.right.circle") { FileActions.revealInFinder(node) }
+                        Button("Copy Path", systemImage: "doc.on.doc") { FileActions.copyPath(node) }
+                        Divider()
+                        Button("Show in Treemap", systemImage: "square.grid.2x2") { appState.drillDown(to: node) }
+                        Divider()
+                        Button("Rescan Folder", systemImage: "arrow.clockwise") { onRescan(node) }
+                            .disabled(appState.busyID != nil)
+                        MoveToTrashButton(node: node, isBusy: appState.busyID != nil, action: onTrash)
                     }
-                    .disabled(appState.busyID != nil)
                 }
+                .labelStyle(.titleAndIcon) // macOS menus show only titles without it
             } primaryAction: { ids in
                 if let node = ids.first.flatMap(appState.visibleDirectory(id:)) {
                     appState.drillDown(to: node)

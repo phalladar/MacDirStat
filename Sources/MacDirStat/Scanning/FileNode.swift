@@ -149,6 +149,16 @@ final class FileNode: Identifiable, @unchecked Sendable {
         }
     }
 
+    /// Cloud-only itself, or a folder holding cloud-only files. The app never trashes these.
+    var hasCloudOnlyContent: Bool {
+        isDataless || cloudOnlyFileCount > 0
+    }
+
+    /// Holds folders the scan didn't enter (cloud-only or unreadable), so its contents are unknown.
+    var hasUnscannedFolders: Bool {
+        unscannedDirectoryCount > 0
+    }
+
     func isInSubtree(of ancestor: FileNode) -> Bool {
         var node: FileNode? = self
         while let current = node {
