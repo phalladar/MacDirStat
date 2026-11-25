@@ -36,6 +36,8 @@ final class AppState {
     var sizeMetric: SizeMetric = .allocatedSize
     var showInspector: Bool = true
     private(set) var expandedIDs: Set<UInt64> = []
+    /// Folders the last scan skipped or read only partly, largest problem areas first.
+    private(set) var skippedFolders: [FileNode] = []
 
     var isScanning: Bool {
         if case .scanning = scanStatus { return true }
@@ -127,6 +129,7 @@ final class AppState {
         rootNode = root
         treemapRoot = root
         selectedNode = root
+        skippedFolders = Self.collectSkippedFolders(in: root)
         scanStatus = .completed
         rebuildBreadcrumbs()
     }
@@ -138,6 +141,20 @@ final class AppState {
         selectedNode = nil
         breadcrumbs = []
         expandedIDs = []
+        skippedFolders = []
+    }
+
+    /// Folders with a scan issue or unreadable entries of their own. Subtree totals prune the
+    /// walk to branches that contain one, so a clean scan visits only the root.
+    nonisolated static func collectSkippedFolders(in root: FileNode) -> [FileNode] {
+        var found: [FileNode] = []
+        var stack = [root]
+        while let folder = stack.popLast() {
+            guard folder.unscannedDirectoryCount > 0 || folder.totalUnavailableEntryCount > 0 else { continue }
+            if folder.scanIssue != nil || folder.unavailableEntryCount > 0 { found.append(folder) }
+            stack.append(contentsOf: folder.children.lazy.filter(\.isDirectory).reversed())
+        }
+        return found
     }
 
     private func rebuildBreadcrumbs() {

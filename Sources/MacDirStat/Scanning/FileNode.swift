@@ -9,7 +9,7 @@ final class FileNode: Identifiable, @unchecked Sendable {
     let category: FileCategory
     let modificationDate: Date?
     let isDataless: Bool
-    var scanIssue: String?
+    var scanIssue: ScanIssue?
     var unavailableEntryCount = 0
     private(set) var unscannedDirectoryCount = 0
     private(set) var totalUnavailableEntryCount = 0

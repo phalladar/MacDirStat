@@ -51,11 +51,9 @@ struct ContentView: View {
 
                             if let root = appState.rootNode,
                                root.unscannedDirectoryCount > 0 || root.totalUnavailableEntryCount > 0 {
-                                Label("Incomplete scan: \(root.unscannedDirectoryCount.formatted()) folders and \(root.totalUnavailableEntryCount.formatted()) entries were not fully scanned. Select a folder for details.",
-                                      systemImage: "exclamationmark.triangle")
-                                    .font(.caption)
-                                    .foregroundStyle(.orange)
-                                    .padding(8)
+                                IncompleteScanBanner(root: root) {
+                                    coordinator?.startScan(path: root.path)
+                                }
                             }
 
                             // Treemap

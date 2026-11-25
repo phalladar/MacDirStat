@@ -49,12 +49,12 @@ struct DetailPanelView: View {
                     LabeledContent("Cloud-only files", value: node.cloudOnlyFileCount.formatted())
                 }
                 if let issue = node.scanIssue {
-                    Text(issue).font(.caption).foregroundStyle(.orange)
+                    Text(issue.message).font(.caption).foregroundStyle(.orange)
                 }
                 if node.unscannedDirectoryCount > 0 || node.totalUnavailableEntryCount > 0 {
                     Label("Incomplete scan", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
-                    Text("\(node.unscannedDirectoryCount.formatted()) folders and \(node.totalUnavailableEntryCount.formatted()) entries could not be fully scanned. Totals include only accessible metadata.")
+                    Text("\(node.unscannedDirectoryCount.formatted()) folders and \(node.totalUnavailableEntryCount.formatted()) entries could not be fully scanned. Sizes leave them out; the banner above the treemap lists them by cause.")
                         .font(.caption)
                 }
 

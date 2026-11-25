@@ -184,7 +184,7 @@ func compareDirectoryEnumerationPerformance() async throws {
     let (root, _) = try await completedScan(fixture.root.path)
     #expect(root.fileCount == 0)
     #expect(root.unscannedDirectoryCount == 1)
-    #expect(root.children.first?.scanIssue != nil)
+    #expect(root.children.first?.scanIssue == .permissionDenied)
 }
 
 @Test func nonexistentAndSymlinkRootsFailInsteadOfCompleting() async throws {
@@ -237,7 +237,7 @@ func compareDirectoryEnumerationPerformance() async throws {
     metadata.st_mode = mode_t(S_IFDIR | 0o700)
     metadata.st_ino = 3
     let cloudFolder = FileNode(name: "online", metadata: metadata)
-    cloudFolder.scanIssue = "Cloud-only folder"
+    cloudFolder.scanIssue = .cloudOnly
     let root = FileNode(inode: 1, name: "/", isDirectory: true)
     root.unavailableEntryCount = 2
     root.addChild(file)
@@ -368,4 +368,36 @@ func localIntegrationScan() async throws {
     // Logical size still reports every copy in full.
     #expect(fileBytes(root, \.ownSize) == 10 * 1_048_576)
     #expect(bytes == root.totalAllocatedSize)
+}
+
+@Test func scanIssuesMapErrnoToActionableKinds() {
+    #expect(ScanIssue(errno: EPERM) == .privacyProtected)
+    #expect(ScanIssue(errno: EACCES) == .permissionDenied)
+    #expect(ScanIssue(errno: EDEADLK) == .cloudOnly)
+    #expect(ScanIssue(errno: EIO) == .other(errno: EIO))
+    #expect(ScanIssue(errno: EIO).kind == .other)
+}
+
+@Test func skippedFoldersAreCollectedOnlyFromAffectedBranches() {
+    let root = FileNode(inode: 1, name: "/scan", isDirectory: true)
+    let clean = FileNode(inode: 2, name: "clean", isDirectory: true)
+    let parent = FileNode(inode: 3, name: "parent", isDirectory: true)
+    let blocked = FileNode(inode: 4, name: "blocked", isDirectory: true)
+    let partial = FileNode(inode: 5, name: "partial", isDirectory: true)
+    blocked.scanIssue = .privacyProtected
+    partial.unavailableEntryCount = 3
+    root.addChild(clean)
+    root.addChild(parent)
+    parent.addChild(blocked)
+    parent.addChild(partial)
+    root.computeAggregates()
+
+    let found = AppState.collectSkippedFolders(in: root)
+    #expect(found.map(\.name) == ["blocked", "partial"])
+    #expect(root.unscannedDirectoryCount == 1)
+    #expect(root.totalUnavailableEntryCount == 3)
+
+    let cleanRoot = FileNode(inode: 6, name: "/ok", isDirectory: true)
+    cleanRoot.computeAggregates()
+    #expect(AppState.collectSkippedFolders(in: cleanRoot).isEmpty)
 }
