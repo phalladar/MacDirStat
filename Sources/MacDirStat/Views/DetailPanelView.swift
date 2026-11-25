@@ -35,6 +35,8 @@ struct DetailPanelView: View {
 
                 if node.isDirectory {
                     LabeledContent("Files", value: "\(node.fileCount.formatted())")
+                    let files = node.children.lazy.filter { !$0.isDirectory }
+                    LabeledContent("Files directly inside", value: "\(files.count.formatted()) · \(ByteFormatter.string(from: files.reduce(0) { $0 + $1.size(for: sizeMetric) }))")
                     LabeledContent("Directories", value: "\(node.directoryCount.formatted())")
                 }
 
