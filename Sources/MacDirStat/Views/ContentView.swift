@@ -12,7 +12,10 @@ struct ContentView: View {
 
         NavigationSplitView {
             if appState.rootNode != nil {
-                DirectoryTreeView()
+                DirectoryTreeView(
+                    onRescan: { node in coordinator?.rescan(node) },
+                    onTrash: { node in coordinator?.moveToTrash(node) }
+                )
                     .navigationSplitViewColumnWidth(min: 200, ideal: 300, max: 400)
             } else {
                 Text("No data")
@@ -66,7 +69,12 @@ struct ContentView: View {
                                 onDrillDown: { node in
                                     appState.drillDown(to: node)
                                 },
-                                sizeMetric: appState.sizeMetric
+                                onTrash: { node in
+                                    coordinator?.moveToTrash(node)
+                                },
+                                sizeMetric: appState.sizeMetric,
+                                treeVersion: appState.treeVersion,
+                                isBusy: appState.busyID != nil
                             )
                         }
                     }
@@ -89,7 +97,7 @@ struct ContentView: View {
         }
         .inspector(isPresented: $state.showInspector) {
             if let selected = appState.selectedNode {
-                DetailPanelView(node: selected, sizeMetric: appState.sizeMetric)
+                DetailPanelView(node: selected, sizeMetric: appState.sizeMetric, treeVersion: appState.treeVersion)
                     .inspectorColumnWidth(min: 250, ideal: 300, max: 400)
             } else {
                 Text("Select an item to view details")

@@ -2,7 +2,7 @@ import Foundation
 
 final class FileNode: Identifiable, @unchecked Sendable {
     let id: UInt64 // inode
-    let name: String
+    var name: String
     let isDirectory: Bool
     let ownSize: Int64
     let allocatedSize: Int64
@@ -84,7 +84,7 @@ final class FileNode: Identifiable, @unchecked Sendable {
         children.append(child)
     }
 
-    func computeAggregates() {
+    func computeAggregates(recursing: Bool = true) {
         guard isDirectory else { return }
         var size: Int64 = ownSize
         var allocated: Int64 = allocatedSize
@@ -97,7 +97,7 @@ final class FileNode: Identifiable, @unchecked Sendable {
         var categories = [Int64](repeating: 0, count: categoryCount * 2)
 
         for child in children {
-            child.computeAggregates()
+            if recursing { child.computeAggregates() }
             if child.isDirectory {
                 for index in categories.indices { categories[index] += child.categorySizes[index] }
             } else {
@@ -147,6 +147,16 @@ final class FileNode: Identifiable, @unchecked Sendable {
         case .fileSize: totalSize
         case .allocatedSize: totalAllocatedSize
         }
+    }
+
+    /// Cloud-only itself, or a folder holding cloud-only files. The app never trashes these.
+    var hasCloudOnlyContent: Bool {
+        isDataless || cloudOnlyFileCount > 0
+    }
+
+    /// Holds folders the scan didn't enter (cloud-only or unreadable), so its contents are unknown.
+    var hasUnscannedFolders: Bool {
+        unscannedDirectoryCount > 0
     }
 
     func isInSubtree(of ancestor: FileNode) -> Bool {

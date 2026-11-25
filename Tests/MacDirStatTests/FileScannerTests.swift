@@ -370,6 +370,67 @@ func localIntegrationScan() async throws {
     #expect(bytes == root.totalAllocatedSize)
 }
 
+@MainActor @Test func replacingASubtreeUpdatesItsAncestors() async {
+    let root = FileNode(inode: 1, name: "/", isDirectory: true)
+    let a = FileNode(inode: 2, name: "a", isDirectory: true)
+    let b = FileNode(inode: 3, name: "b", isDirectory: true)
+    let video = FileNode(inode: 4, name: "x.mp4", isDirectory: false, allocatedSize: 8192, category: .video)
+    root.addChild(a)
+    root.addChild(b)
+    a.addChild(video)
+    b.addChild(FileNode(inode: 5, name: "y.jpg", isDirectory: false, allocatedSize: 4096, category: .images))
+    root.computeAggregates()
+    let state = AppState()
+    state.setScanCompleted(root: root)
+    state.selectedNode = video
+    state.treemapRoot = a
+
+    // A rescan of "a" comes back as a new root named by its full path.
+    let fresh = FileNode(inode: 2, name: "/a", isDirectory: true)
+    fresh.addChild(FileNode(inode: 6, name: "z.mp4", isDirectory: false, allocatedSize: 16384, category: .video))
+    fresh.computeAggregates()
+    await state.replace(a, with: fresh)
+    #expect(fresh.name == "a" && fresh.parent === root)
+    #expect(root.totalAllocatedSize == 20480)
+    #expect(root.categoryBreakdown().map(\.size) == [16384, 4096])
+    #expect(state.selectedNode === fresh && state.treemapRoot === fresh)
+
+    state.selectedNode = b
+    await state.replace(b, with: nil)
+    #expect(root.children.map(\.name) == ["a"])
+    #expect(root.totalAllocatedSize == 16384 && root.directoryCount == 2)
+    #expect(state.selectedNode === root)
+}
+
+@MainActor @Test func replacedSubtreeIsDetached() async {
+    let root = FileNode(inode: 1, name: "/", isDirectory: true)
+    let a = FileNode(inode: 2, name: "a", isDirectory: true)
+    let video = FileNode(inode: 4, name: "x.mp4", isDirectory: false, allocatedSize: 8192, category: .video)
+    root.addChild(a)
+    a.addChild(video)
+    root.computeAggregates()
+    let state = AppState()
+    state.setScanCompleted(root: root)
+
+    let fresh = FileNode(inode: 2, name: "/a", isDirectory: true)
+    fresh.addChild(FileNode(inode: 4, name: "x.mp4", isDirectory: false, allocatedSize: 8192, category: .video))
+    fresh.computeAggregates()
+    await state.replace(a, with: fresh)
+
+    // A treemap rect laid out before the replace still points at the old node.
+    #expect(!video.isInSubtree(of: root))
+}
+
+@Test func folderWithCloudOnlySubfolderIsNotTrashable() {
+    let projects = FileNode(inode: 1, name: "/Projects", isDirectory: true)
+    let old = FileNode(inode: 2, name: "Old", isDirectory: true, isDataless: true)
+    old.scanIssue = .cloudOnly
+    projects.addChild(old)
+    projects.computeAggregates()
+    #expect(!projects.hasCloudOnlyContent)
+    #expect(projects.hasUnscannedFolders)
+}
+
 @Test func scanIssuesMapErrnoToActionableKinds() {
     #expect(ScanIssue(errno: EPERM) == .privacyProtected)
     #expect(ScanIssue(errno: EACCES) == .permissionDenied)
@@ -400,4 +461,29 @@ func localIntegrationScan() async throws {
     let cleanRoot = FileNode(inode: 6, name: "/ok", isDirectory: true)
     cleanRoot.computeAggregates()
     #expect(AppState.collectSkippedFolders(in: cleanRoot).isEmpty)
+}
+
+@MainActor @Test func replacingASubtreeRefreshesSkippedFolders() async {
+    let root = FileNode(inode: 1, name: "/scan", isDirectory: true)
+    let a = FileNode(inode: 2, name: "a", isDirectory: true)
+    let blocked = FileNode(inode: 3, name: "blocked", isDirectory: true)
+    let other = FileNode(inode: 4, name: "other", isDirectory: true)
+    blocked.scanIssue = .privacyProtected
+    other.scanIssue = .permissionDenied
+    root.addChild(a)
+    a.addChild(blocked)
+    root.addChild(other)
+    root.computeAggregates()
+    let state = AppState()
+    state.setScanCompleted(root: root)
+
+    // After granting access, a rescan of "a" reads "blocked" fine.
+    let fresh = FileNode(inode: 2, name: "/scan/a", isDirectory: true)
+    fresh.addChild(FileNode(inode: 3, name: "blocked", isDirectory: true))
+    fresh.computeAggregates()
+    await state.replace(a, with: fresh)
+    #expect(state.skippedFolders.map(\.name) == ["other"])
+
+    await state.replace(other, with: nil)
+    #expect(state.skippedFolders.isEmpty)
 }

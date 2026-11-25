@@ -4,6 +4,7 @@ import Foundation
 final class ScanCoordinator {
     private let appState: AppState
     private var scanTask: Task<Void, Never>?
+    private var partialTask: Task<Void, Never>?
 
     init(appState: AppState) {
         self.appState = appState
@@ -44,8 +45,45 @@ final class ScanCoordinator {
         }
     }
 
+    func rescan(_ folder: FileNode) {
+        guard appState.busyID == nil else { return }
+        appState.busyID = folder.id
+        let scanner = FileScanner(rootPath: folder.path)
+        partialTask = Task {
+            defer { appState.busyID = nil }
+            for await event in scanner.scan() {
+                switch event {
+                case let .completed(root): await appState.replace(folder, with: root)
+                case let .error(message):
+                    // Deleted outside the app since the scan: drop it from the tree.
+                    if FileActions.itemIsGone(folder.path) {
+                        await appState.replace(folder, with: nil)
+                    } else {
+                        FileActions.showError("Couldn't rescan “\(folder.name)”", message)
+                    }
+                case .progress: break
+                }
+            }
+        }
+    }
+
+    /// Asynchronous: moving a large folder to the Trash can take seconds.
+    func moveToTrash(_ node: FileNode) {
+        // A treemap rect laid out before a replace can still point at a node no longer in the tree.
+        guard appState.busyID == nil,
+              let root = appState.rootNode, node.isInSubtree(of: root),
+              FileActions.confirmMoveToTrash(node, sizeMetric: appState.sizeMetric) else { return }
+        appState.busyID = node.id
+        partialTask = Task {
+            defer { appState.busyID = nil }
+            if await FileActions.moveToTrash(node) { await appState.replace(node, with: nil) }
+        }
+    }
+
     func cancel() {
         scanTask?.cancel()
         scanTask = nil
+        partialTask?.cancel()
+        partialTask = nil
     }
 }

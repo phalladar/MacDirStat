@@ -36,6 +36,13 @@ final class AppState {
     var sizeMetric: SizeMetric = .allocatedSize
     var showInspector: Bool = true
     private(set) var expandedIDs: Set<UInt64> = []
+    /// Bumped when part of the tree is replaced in place, so views showing its totals refresh.
+    private(set) var treeVersion = 0
+    /// The item a background change is working on. One at a time, so changes can't overlap in the tree.
+    var busyID: UInt64?
+    /// Each treemap's latest layout, keyed by view. Layouts read the tree off the main thread;
+    /// replace(_:with:) waits for all of them. One entry per view, so windows don't cancel each other.
+    @ObservationIgnored var layoutTasks: [UUID: Task<Void, Never>] = [:]
     /// Folders the last scan skipped or read only partly, largest problem areas first.
     private(set) var skippedFolders: [FileNode] = []
 
@@ -99,8 +106,47 @@ final class AppState {
         }
     }
 
+    /// Splices a fresh scan of `old` into the tree, or removes it when `new` is nil, updating only its ancestors.
+    func replace(_ old: FileNode, with new: FileNode?) async {
+        // A view can start a new layout while we wait, so wait until no task changed.
+        var waited: [UUID: Task<Void, Never>]
+        repeat {
+            waited = layoutTasks
+            for task in waited.values { await task.value }
+        } while waited != layoutTasks
+        // A new scan may have replaced the whole tree meanwhile.
+        guard let root = rootNode, old.isInSubtree(of: root), let parent = old.parent,
+              let index = parent.children.firstIndex(where: { $0 === old }) else { return }
+        if let new {
+            new.name = old.name
+            new.parent = parent
+            parent.children[index] = new
+        } else {
+            parent.children.remove(at: index)
+        }
+        // Treemap rects laid out before this still point into the old subtree; detaching it
+        // keeps them from passing the isInSubtree(of: root) checks.
+        old.parent = nil
+        var ancestor: FileNode? = parent
+        while let current = ancestor {
+            current.computeAggregates(recursing: false)
+            current.children.sort { $0.totalAllocatedSize > $1.totalAllocatedSize }
+            ancestor = current.parent
+        }
+        // The list held nodes from the old subtree; the walk is pruned to affected branches.
+        skippedFolders = Self.collectSkippedFolders(in: root)
+        let replacement = new ?? parent
+        if selectedNode?.isInSubtree(of: old) == true { selectedNode = replacement }
+        if treemapRoot?.isInSubtree(of: old) == true {
+            treemapRoot = replacement
+            rebuildBreadcrumbs()
+        }
+        treeVersion += 1
+    }
+
     func drillDown(to node: FileNode) {
-        guard node.isDirectory else { return }
+        // A treemap rect laid out before replace(_:with:) can point at a detached node.
+        guard node.isDirectory, let root = rootNode, node.isInSubtree(of: root) else { return }
         withAnimation(.spring(duration: 0.3)) {
             treemapRoot = node
             selectedNode = node
