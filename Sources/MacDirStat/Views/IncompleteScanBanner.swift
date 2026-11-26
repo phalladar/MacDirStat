@@ -39,7 +39,7 @@ struct IncompleteScanBanner: View {
                 if counts[.changedDuringScan, default: 0] > 0 {
                     Button("Rescan", action: onRescan)
                 }
-                Button("Show Folders") { showFolders.toggle() }
+                Button("List Skipped Folders…") { showFolders.toggle() }
                     .popover(isPresented: $showFolders, arrowEdge: .bottom) {
                         SkippedFoldersList(root: root, folders: appState.skippedFolders)
                     }
@@ -131,7 +131,7 @@ private struct SkippedFoldersList: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(relativePath(folder))
                     .lineLimit(1)
-                    .truncationMode(.head)
+                    .truncationMode(.middle)
                 if let detail {
                     Text(detail).font(.caption).foregroundStyle(.secondary)
                 }

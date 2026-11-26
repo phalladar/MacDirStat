@@ -18,6 +18,10 @@ enum ScanStatus: Equatable {
     }
 }
 
+enum TreemapColorMode: String, CaseIterable, Sendable {
+    case type, folder
+}
+
 enum SizeMetric: String, CaseIterable, Sendable {
     case fileSize = "File Size"
     case allocatedSize = "Allocated Size"
@@ -29,12 +33,19 @@ final class AppState {
     var scanStatus: ScanStatus = .idle
     var rootNode: FileNode?
     var treemapRoot: FileNode?
-    var selectedNode: FileNode? {
-        didSet { if let selectedNode { revealInTree(selectedNode) } }
-    }
+    var selectedNode: FileNode?
     var breadcrumbs: [FileNode] = []
     var sizeMetric: SizeMetric = .allocatedSize
     var showInspector: Bool = true
+    /// How many folder levels the treemap opens on its own.
+    var detailLevel = 3
+    static let detailRange = 1...8
+    var colorMode: TreemapColorMode = .type
+    /// Off draws only files and smaller-items blocks, every folder open to the bottom.
+    /// The detail level and hand-opened folders then don't apply, but are kept for when it's back on.
+    var showsFolders = true
+    /// Folders the user opened or closed by hand in the treemap, by inode. Wins over the detail level.
+    private(set) var folderOverrides: [UInt64: Bool] = [:]
     private(set) var expandedIDs: Set<UInt64> = []
     /// Bumped when part of the tree is replaced in place, so views showing its totals refresh.
     private(set) var treeVersion = 0
@@ -51,8 +62,9 @@ final class AppState {
         return false
     }
 
-    var hasData: Bool {
-        rootNode != nil
+    /// A scanned tree on screen, not the welcome screen over one: what the treemap controls act on.
+    var hasTree: Bool {
+        scanStatus == .completed && treemapRoot != nil
     }
 
     var selectedDirectory: FileNode? {
@@ -60,8 +72,8 @@ final class AppState {
         return node.isDirectory ? node : node.parent
     }
 
-    /// Selection made in the sidebar. The treemap keeps its zoom unless the folder is outside
-    /// the folder it shows; then it moves to the folder's parent.
+    /// Selection made in the sidebar or the skipped-folders list. The treemap keeps its zoom unless
+    /// the folder is outside the folder it shows; then it moves to the folder's parent.
     func selectFromTree(_ node: FileNode) {
         selectedNode = node
         if let current = treemapRoot, !node.isInSubtree(of: current) {
@@ -70,7 +82,27 @@ final class AppState {
                 rebuildBreadcrumbs()
             }
         }
+        revealInTree(node)
     }
+
+    // Any write to an @Observable property notifies observers, even when nothing changes.
+    func setFolderOpen(_ node: FileNode, _ open: Bool) {
+        if folderOverrides[node.id] != open { folderOverrides[node.id] = open }
+    }
+
+    func collapseAll() { if !folderOverrides.isEmpty { folderOverrides = [:] } }
+
+    var canCollapseAll: Bool { hasTree && showsFolders && !folderOverrides.isEmpty }
+
+    var canMoreDetail: Bool { hasTree && showsFolders && detailLevel < Self.detailRange.upperBound }
+
+    var canLessDetail: Bool { hasTree && showsFolders && detailLevel > Self.detailRange.lowerBound }
+
+    func moreDetail() { detailLevel = min(detailLevel + 1, Self.detailRange.upperBound) }
+
+    func lessDetail() { detailLevel = max(detailLevel - 1, Self.detailRange.lowerBound) }
+
+    func toggleInspector() { showInspector.toggle() }
 
     func setExpanded(_ node: FileNode, _ expanded: Bool) {
         if expanded {
@@ -152,6 +184,9 @@ final class AppState {
             selectedNode = node
             rebuildBreadcrumbs()
         }
+        revealInTree(node)
+        // The treemap now shows this folder's children, so the sidebar opens it too.
+        if !expandedIDs.contains(node.id) { expandedIDs.insert(node.id) }
     }
 
     func navigateTo(breadcrumb node: FileNode) {
@@ -160,6 +195,7 @@ final class AppState {
             selectedNode = node
             rebuildBreadcrumbs()
         }
+        revealInTree(node)
     }
 
     func navigateUp() {
@@ -169,12 +205,14 @@ final class AppState {
             selectedNode = parent
             rebuildBreadcrumbs()
         }
+        revealInTree(parent)
     }
 
     func setScanCompleted(root: FileNode) {
         rootNode = root
         treemapRoot = root
         selectedNode = root
+        folderOverrides = [:]
         skippedFolders = Self.collectSkippedFolders(in: root)
         scanStatus = .completed
         rebuildBreadcrumbs()
@@ -187,6 +225,7 @@ final class AppState {
         selectedNode = nil
         breadcrumbs = []
         expandedIDs = []
+        folderOverrides = [:]
         skippedFolders = []
     }
 
