@@ -129,3 +129,33 @@ import Testing
     let file = TreemapItem(id: 1, node: folder.children[0], rect: block.rect, depth: 3, kind: .file, branch: 0)
     #expect(smallerItemsHint(for: file, shown: root, sizeMetric: .allocatedSize) == nil)
 }
+
+@Test func selectionTravelSettlesWithoutOvershoot() {
+    let samples = stride(from: 0.0, through: 0.5, by: 0.01).map { TreemapSelectionOverlay.progress(elapsed: $0) }
+    #expect(samples.first == 0 && samples.last == 1)
+    #expect(zip(samples, samples.dropFirst()).allSatisfy { $0 <= $1 && $1 <= 1 })
+    #expect(TreemapSelectionOverlay.progress(elapsed: TreemapSelectionOverlay.response) > 0.98)
+
+    let folder = SelectionShape(rect: TreemapRect(x: 0, y: 0, width: 100, height: 40), radius: 6, dim: 1)
+    let file = SelectionShape(rect: TreemapRect(x: 100, y: 40, width: 20, height: 20), radius: 4, dim: 0)
+    let half = folder.interpolated(to: file, 0.5)
+    #expect([half.rect.x, half.rect.y, half.rect.width, half.rect.height, half.radius, half.dim] == [50, 20, 60, 30, 5, 0.5])
+}
+
+@MainActor @Test func onlyTheFoldersOwnItemDimsTheRest() {
+    let parent = FileNode(inode: 1, name: "p", isDirectory: true)
+    let folder = FileNode(inode: 2, name: "f", isDirectory: true)
+    let file = FileNode(inode: 3, name: "a", isDirectory: false)
+    parent.addChild(folder)
+    folder.addChild(file)
+    func item(_ node: FileNode, _ kind: TreemapItem.Kind) -> TreemapItem {
+        TreemapItem(id: 0, node: node, rect: TreemapRect(x: 0, y: 0, width: 10, height: 10), depth: 1, kind: kind, branch: 0)
+    }
+    #expect(TreemapView.dimsAround(item(folder, .openFolder), selected: folder))
+    #expect(TreemapView.dimsAround(item(folder, .closedFolder), selected: folder))
+    // Flat mode: the folder's smaller-items block stands for it, but isn't it.
+    #expect(!TreemapView.dimsAround(item(folder, .smallerItems(count: 2, size: 2)), selected: folder))
+    // An ancestor standing in for a folder inside it, and a file.
+    #expect(!TreemapView.dimsAround(item(parent, .closedFolder), selected: folder))
+    #expect(!TreemapView.dimsAround(item(file, .file), selected: file))
+}

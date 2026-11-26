@@ -335,6 +335,14 @@ private func flatTree() -> FileNode {
     func milliseconds(_ d: Duration) -> Double {
         Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
     }
+    // ImageRenderer's cgImage can defer the pixels; drawing into a 2× bitmap of our own can't.
+    // The CPU rasterizes here, so this bounds an on-screen frame from above.
+    func rasterize(_ view: some View) -> Double {
+        let bitmap = CGContext(data: nil, width: 2400, height: 1600, bitsPerComponent: 8, bytesPerRow: 0,
+                               space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        bitmap.scaleBy(x: 2, y: 2)
+        return milliseconds(clock.measure { ImageRenderer(content: view).render { _, draw in draw(bitmap) } })
+    }
 
     for (level, showsFolders) in [(3, true), (8, true), (3, false)] {
         var items: [TreemapItem] = []
@@ -347,7 +355,7 @@ private func flatTree() -> FileNode {
         }
 
         let laidOut = items
-        var drawTimes: [Double] = []
+        var drawTimes: [Double] = [], rasterTimes: [Double] = []
         for _ in 0..<5 {
             let canvas = Canvas { context, size in
                 TreemapRenderer(items: laidOut, zoomScale: 1, panOffset: .zero, showLabels: true,
@@ -355,8 +363,24 @@ private func flatTree() -> FileNode {
                     .draw(in: &context, size: size)
             }.frame(width: 1200, height: 800)
             drawTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
+            rasterTimes.append(rasterize(canvas))
         }
-        print("BENCH path=\(path) level=\(level) folders=\(showsFolders) items=\(items.count) layout_ms_median=\(median(layoutTimes)) draw_ms_median=\(median(drawTimes))")
+        print("BENCH path=\(path) level=\(level) folders=\(showsFolders) items=\(items.count) layout_ms_median=\(median(layoutTimes)) draw_ms_median=\(median(drawTimes)) cpu_raster_2x_ms_median=\(median(rasterTimes))")
+
+        // One selection overlay frame, scrim and shadow included: recorded, and rasterized on the CPU.
+        if let selected = laidOut.first(where: { $0.depth == 2 }) {
+            var recordTimes: [Double] = [], overlayRasterTimes: [Double] = []
+            for _ in 0..<15 {
+                let canvas = Canvas { context, size in
+                    let rect = TreemapRenderer.screenRect(of: selected, zoomScale: 1, panOffset: .zero, scale: 2)
+                    TreemapSelectionOverlay.draw(rect, radius: TreemapRenderer.cornerRadius(of: selected, size: rect.size),
+                                                 dim: 1, contrast: .standard, in: &context, size: size)
+                }.frame(width: 1200, height: 800)
+                recordTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
+                overlayRasterTimes.append(rasterize(canvas))
+            }
+            print("BENCH level=\(level) folders=\(showsFolders) selection_overlay_ms_median=\(median(recordTimes)) cpu_raster_2x_ms_median=\(median(overlayRasterTimes))")
+        }
 
         // Halfway through a transition: building it, then one frame with every item it draws.
         func timeTransition(_ name: String, from old: [TreemapItem], to new: [TreemapItem]) {
@@ -394,8 +418,8 @@ private func flatTree() -> FileNode {
 }
 
 // Opt in with a folder to scan. Writes the treemap at level 3 in light and dark, by type and by
-// folder, and without folders by type, as PNGs to MACDIRSTAT_SNAPSHOT_OUT (default: the temporary
-// directory) for a look by eye.
+// folder, without folders by type, and by type with a folder and with a file selected, as PNGs to
+// MACDIRSTAT_SNAPSHOT_OUT (default: the temporary directory) for a look by eye.
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MACDIRSTAT_SNAPSHOT_PATH"] != nil))
 @MainActor func treemapSnapshots() async throws {
     let environment = ProcessInfo.processInfo.environment
@@ -403,14 +427,25 @@ private func flatTree() -> FileNode {
     let output = URL(fileURLWithPath: environment["MACDIRSTAT_SNAPSHOT_OUT"] ?? NSTemporaryDirectory())
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
     for scheme in [ColorScheme.light, .dark] {
-        for (mode, showsFolders) in [(TreemapColorMode.type, true), (.folder, true), (.type, false)] {
+        for (mode, showsFolders, selects) in [(TreemapColorMode.type, true, ""), (.folder, true, ""), (.type, false, ""),
+                                              (.type, true, "folder"), (.type, true, "file")] {
             let items = TreemapLayoutEngine().layout(root: root, in: TreemapRect(x: 0, y: 0, width: 1200, height: 800),
                                                      sizeMetric: .allocatedSize, detailLevel: 3, overrides: [:],
                                                      showsFolders: showsFolders)
+            // The largest open folder below the top level, or the largest file.
+            let selected = selects.isEmpty ? nil : items.filter {
+                selects == "folder" ? $0.kind == .openFolder && $0.depth == 2 : $0.kind == .file
+            }.max { $0.rect.area < $1.rect.area }
             let canvas = Canvas { context, size in
                 TreemapRenderer(items: items, zoomScale: 1, panOffset: .zero, showLabels: true,
                                 sizeMetric: .allocatedSize, colorMode: mode, contrast: .standard)
                     .draw(in: &context, size: size)
+                if let selected {
+                    let rect = TreemapRenderer.screenRect(of: selected, zoomScale: 1, panOffset: .zero, scale: 2)
+                    TreemapSelectionOverlay.draw(rect, radius: TreemapRenderer.cornerRadius(of: selected, size: rect.size),
+                                                 dim: selected.node.isDirectory ? 1 : 0, contrast: .standard,
+                                                 in: &context, size: size)
+                }
             }
             .frame(width: 1200, height: 800)
             .background(Color(nsColor: .windowBackgroundColor))
@@ -419,7 +454,8 @@ private func flatTree() -> FileNode {
             renderer.scale = 2
             let image = try #require(renderer.cgImage)
             let url = output.appendingPathComponent(
-                "treemap-\(scheme == .dark ? "dark" : "light")-\(mode.rawValue)\(showsFolders ? "" : "-flat").png")
+                "treemap-\(scheme == .dark ? "dark" : "light")-\(mode.rawValue)\(showsFolders ? "" : "-flat")"
+                    + (selects.isEmpty ? "" : "-select-\(selects)") + ".png")
             let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
             CGImageDestinationAddImage(destination, image, nil)
             #expect(CGImageDestinationFinalize(destination))

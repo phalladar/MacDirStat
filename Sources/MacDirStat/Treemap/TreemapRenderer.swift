@@ -19,7 +19,7 @@ struct TreemapRenderer {
     /// in light mode, and light enough in dark mode, that a strip stands apart from the frame around it.
     private static let neutral = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.44, green: 0.44, blue: 0.46, alpha: 1)
+            ? NSColor(srgbRed: 0.5, green: 0.5, blue: 0.52, alpha: 1)
             : NSColor(srgbRed: 0.64, green: 0.64, blue: 0.67, alpha: 1)
     })
     private static let frameRadius: CGFloat = 6, blockRadius: CGFloat = 4
@@ -47,7 +47,12 @@ struct TreemapRenderer {
             separator.opacity = 1
             outlines = Color(separator)
         }
-        let frameShade = Color.black.opacity(dark ? 0.16 : 0.05)
+        // An open frame's body is a translucent shade over its parent's, so each nesting level is a
+        // surface of its own: darker in light mode; lighter in dark mode, like an elevated surface,
+        // since darker runs into black within two levels. Three levels at most there, so deep ones
+        // don't wash out toward the strips.
+        let frameShade = dark ? Color.white.opacity(0.03) : Color.black.opacity(0.05)
+        let frameShadeDepth = dark ? 3 : TreemapMetrics.maxDepth
         let titleColor: Color = dark ? .white : .black
         let stripHeight = Self.snap(TreemapMetrics.titleHeight * zoomScale, scale)
 
@@ -100,8 +105,9 @@ struct TreemapRenderer {
 
             case .openFolder, .closedFolder:
                 let open = item.kind == .openFolder
+                let shade = item.depth <= frameShadeDepth ? frameShade : .clear
                 context.fill(shape, with: Self.bands(rect, (tone.stripSheen, 1), (tone.strip, stripHeight - 1),
-                                                     body: open ? frameShade : tone.bodyTop, open ? frameShade : tone.bodyBottom))
+                                                     body: open ? shade : tone.bodyTop, open ? shade : tone.bodyBottom))
                 if !open && rect.height > stripHeight + 14 {
                     makeupBar(item.node, in: CGRect(x: rect.minX + 7, y: rect.minY + stripHeight + 5,
                                                     width: min(rect.width - 14, 160), height: Self.barHeight),
@@ -189,11 +195,15 @@ struct TreemapRenderer {
     /// The item's continuous rounded shape at `rect`, or `inset` inside it, for the item and the
     /// overlays that trace it. Never rounder than a quarter of the shorter side.
     static func outline(of item: TreemapItem, in rect: CGRect, inset: CGFloat = 0) -> Path {
-        let radius = min(item.hasTitleStrip ? frameRadius : blockRadius, min(rect.width, rect.height) / 4)
+        let radius = cornerRadius(of: item, size: rect.size)
         return Path(roundedRect: rect.insetBy(dx: inset, dy: inset), cornerRadius: max(0, radius - inset), style: .continuous)
     }
 
-    private static func snap(_ value: CGFloat, _ scale: CGFloat) -> CGFloat {
+    static func cornerRadius(of item: TreemapItem, size: CGSize) -> CGFloat {
+        min(item.hasTitleStrip ? frameRadius : blockRadius, min(size.width, size.height) / 4)
+    }
+
+    static func snap(_ value: CGFloat, _ scale: CGFloat) -> CGFloat {
         (value * scale).rounded() / scale
     }
 

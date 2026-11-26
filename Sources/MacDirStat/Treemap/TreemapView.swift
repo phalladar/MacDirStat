@@ -46,8 +46,16 @@ struct TreemapView: View {
         return items[id]
     }
 
-    private var selectedItemID: Int? {
-        Self.selectedItemID(of: selectedNode, shown: root, items: itemIndexByNode, smallerItems: smallerItemsByFolder)
+    private var selection: TreemapSelectionOverlay.Selection? {
+        Self.selectedItemID(of: selectedNode, shown: root, items: itemIndexByNode, smallerItems: smallerItemsByFolder).map {
+            .init(generation: layoutGeneration, id: $0, dims: Self.dimsAround(items[$0], selected: selectedNode))
+        }
+    }
+
+    /// Only the selected folder's own frame or block dims the rest, as on main; never a
+    /// smaller-items block or an ancestor standing in for it, nor a file.
+    static func dimsAround(_ item: TreemapItem, selected: FileNode?) -> Bool {
+        item.node === selected && item.node.isDirectory && !item.isSmallerItems
     }
 
     /// The selected node's rectangle; for a folder without one (folders not shown), its own
@@ -89,10 +97,11 @@ struct TreemapView: View {
                 // Both overlays trace `items`, where the transition ends; they wait for it.
                 TreemapSelectionOverlay(
                     items: items,
-                    selectedItemID: transition == nil ? selectedItemID : nil,
+                    selection: transition == nil ? selection : nil,
                     zoomScale: zoomScale,
                     panOffset: panOffset
                 )
+                .equatable()
 
                 // Lightweight hover overlay — redraws only the single highlight rect
                 TreemapHoverOverlay(
@@ -493,25 +502,6 @@ private struct TreemapHoverOverlay: View {
             let rect = TreemapRenderer.screenRect(of: item, zoomScale: zoomScale, panOffset: panOffset,
                                                   scale: context.environment.displayScale)
             context.fill(TreemapRenderer.outline(of: item, in: rect), with: .color(.white.opacity(0.25)))
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-private struct TreemapSelectionOverlay: View {
-    let items: [TreemapItem]
-    let selectedItemID: Int?
-    let zoomScale: CGFloat
-    let panOffset: CGPoint
-
-    var body: some View {
-        // An outline only: dimming the rest would hide the frames the user is exploring.
-        Canvas { context, _ in
-            guard let id = selectedItemID, items.indices.contains(id) else { return }
-            let item = items[id]
-            let rect = TreemapRenderer.screenRect(of: item, zoomScale: zoomScale, panOffset: panOffset,
-                                                  scale: context.environment.displayScale)
-            context.stroke(TreemapRenderer.outline(of: item, in: rect, inset: 1), with: .color(.white), lineWidth: 2)
         }
         .allowsHitTesting(false)
     }
