@@ -489,29 +489,33 @@ func localIntegrationScan() async throws {
 }
 
 @MainActor @Test func dismissedIncompleteBannerReturnsAfterScanButNotTrash() async {
-    func makeRoot() -> (FileNode, FileNode) {
+    func makeRoot() -> (FileNode, FileNode, FileNode) {
         let root = FileNode(inode: 1, name: "/", isDirectory: true)
         let a = FileNode(inode: 2, name: "a", isDirectory: true)
+        let b = FileNode(inode: 3, name: "b", isDirectory: true)
         root.addChild(a)
+        root.addChild(b)
         root.computeAggregates()
-        return (root, a)
+        return (root, a, b)
     }
     let state = AppState()
-    let (root, a) = makeRoot()
+    let (root, a, b) = makeRoot()
     state.setScanCompleted(root: root)
     #expect(!state.isIncompleteBannerDismissed)
 
     // Trashing replaces a subtree with nothing and leaves the banner dismissed.
-    state.dismissIncompleteBanner()
+    state.isIncompleteBannerDismissed = true
     await state.replace(a, with: nil)
     #expect(state.isIncompleteBannerDismissed)
 
-    // A partial rescan (ScanCoordinator.rescan) brings it back.
-    state.showIncompleteBannerAgain()
+    // A partial rescan splices in a fresh subtree and brings it back.
+    let fresh = FileNode(inode: 4, name: "b", isDirectory: true)
+    fresh.computeAggregates()
+    await state.replace(b, with: fresh)
     #expect(!state.isIncompleteBannerDismissed)
 
     // So does a full scan.
-    state.dismissIncompleteBanner()
+    state.isIncompleteBannerDismissed = true
     state.setScanCompleted(root: makeRoot().0)
     #expect(!state.isIncompleteBannerDismissed)
 }

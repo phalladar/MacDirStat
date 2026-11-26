@@ -58,7 +58,7 @@ struct DetailPanelView: View {
                     Label("Incomplete scan", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                     if appState.isIncompleteBannerDismissed {
-                        Button("Show Banner") { appState.showIncompleteBannerAgain() }
+                        Button("Show Banner") { appState.isIncompleteBannerDismissed = false }
                             .buttonStyle(.link)
                             .controlSize(.small)
                     }

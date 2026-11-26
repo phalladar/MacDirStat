@@ -48,7 +48,7 @@ struct IncompleteScanBanner: View {
             .fixedSize()
 
             Button {
-                appState.dismissIncompleteBanner()
+                appState.isIncompleteBannerDismissed = true
             } label: {
                 Image(systemName: "xmark")
             }

@@ -53,9 +53,7 @@ final class ScanCoordinator {
             defer { appState.busyID = nil }
             for await event in scanner.scan() {
                 switch event {
-                case let .completed(root):
-                    await appState.replace(folder, with: root)
-                    appState.showIncompleteBannerAgain()
+                case let .completed(root): await appState.replace(folder, with: root)
                 case let .error(message):
                     // Deleted outside the app since the scan: drop it from the tree.
                     if FileActions.itemIsGone(folder.path) {
