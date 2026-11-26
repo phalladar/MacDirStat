@@ -188,7 +188,6 @@ final class AppState {
     func reset() {
         scanStatus = .idle
         rootNode = nil
-        isIncompleteBannerDismissed = false
         treemapRoot = nil
         selectedNode = nil
         breadcrumbs = []
