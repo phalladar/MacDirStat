@@ -361,14 +361,9 @@ private struct TreemapHoverOverlay: View {
     var body: some View {
         Canvas { context, _ in
             guard let item else { return }
-            let screenRect = CGRect(
-                x: panOffset.x + item.rect.x * zoomScale,
-                y: panOffset.y + item.rect.y * zoomScale,
-                width: item.rect.width * zoomScale,
-                height: item.rect.height * zoomScale
-            )
-            let path = Path(roundedRect: screenRect, cornerRadius: TreemapRenderer.cornerRadius(of: item, in: screenRect))
-            context.fill(path, with: .color(.white.opacity(0.25)))
+            let rect = TreemapRenderer.screenRect(of: item, zoomScale: zoomScale, panOffset: panOffset,
+                                                  scale: context.environment.displayScale)
+            context.fill(TreemapRenderer.outline(of: item, in: rect), with: .color(.white.opacity(0.25)))
         }
         .allowsHitTesting(false)
     }
@@ -385,15 +380,9 @@ private struct TreemapSelectionOverlay: View {
         Canvas { context, _ in
             guard let id = selectedItemID, items.indices.contains(id) else { return }
             let item = items[id]
-            let rect = CGRect(
-                x: panOffset.x + item.rect.x * zoomScale,
-                y: panOffset.y + item.rect.y * zoomScale,
-                width: item.rect.width * zoomScale,
-                height: item.rect.height * zoomScale
-            )
-            let radius = TreemapRenderer.cornerRadius(of: item, in: rect)
-            context.stroke(Path(roundedRect: rect.insetBy(dx: 1, dy: 1), cornerRadius: max(0, radius - 1)),
-                           with: .color(.white), lineWidth: 2)
+            let rect = TreemapRenderer.screenRect(of: item, zoomScale: zoomScale, panOffset: panOffset,
+                                                  scale: context.environment.displayScale)
+            context.stroke(TreemapRenderer.outline(of: item, in: rect, inset: 1), with: .color(.white), lineWidth: 2)
         }
         .allowsHitTesting(false)
     }

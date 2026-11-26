@@ -36,6 +36,7 @@ struct TreemapRenderer {
             categoryTones = []
         }
         let categoryColors = colorMode == .type ? FileCategory.allCases.map { $0.color.resolve(in: environment) } : []
+        let scale = environment.displayScale
         // Increase Contrast: every frame and block outlined in the separator color, fully opaque.
         var outlines: Color?
         if contrast == .increased {
@@ -45,33 +46,31 @@ struct TreemapRenderer {
         }
         let frameShade = Color.black.opacity(dark ? 0.16 : 0.05)
         let titleColor: Color = dark ? .white : .black
-        let stripHeight = TreemapMetrics.titleHeight * zoomScale
+        let stripHeight = Self.snap(TreemapMetrics.titleHeight * zoomScale, scale)
 
         var stripes = Path()
         var titles: [(GraphicsContext.ResolvedText, CGRect)] = []
         var labels: [(GraphicsContext.ResolvedText, CGRect)] = []
 
         for item in items {
-            let rect = CGRect(x: panOffset.x + item.rect.x * zoomScale, y: panOffset.y + item.rect.y * zoomScale,
-                              width: item.rect.width * zoomScale, height: item.rect.height * zoomScale)
+            let rect = Self.screenRect(of: item, zoomScale: zoomScale, panOffset: panOffset, scale: scale)
             guard rect.intersects(viewport), rect.width >= 0.5, rect.height >= 0.5 else { continue }
             let tone = colorMode == .folder ? tones[item.branch % tones.count]
                 : item.kind == .file ? categoryTones[item.node.category.index] : tones[0]
+            // Each item is one fill of one shape, its bands hard stops of one gradient, so its edge
+            // is antialiased once. Separation comes from the gap; a 1 pt sheen lights the top edge.
+            let shape = Self.outline(of: item, in: rect)
 
             switch item.kind {
             case .file:
-                let block = Path(roundedRect: rect, cornerRadius: Self.radius(Self.blockRadius, rect))
-                context.fill(block, with: tone.tile(rect))
-                if let outlines { context.stroke(block, with: .color(outlines), lineWidth: 1) }
+                context.fill(shape, with: Self.bands(rect, (tone.tileSheen, 1), body: tone.tileTop, tone.tileBottom))
                 if showLabels, let label = tileLabel(item.node.name, item.node.size(for: sizeMetric), in: rect, context) {
                     labels.append(label)
                 }
 
             case .smallerItems(let count, let total):
-                let block = Path(roundedRect: rect, cornerRadius: Self.radius(Self.blockRadius, rect))
-                context.fill(block, with: tone.body(rect))
-                stripes.addPath(block)
-                if let outlines { context.stroke(block, with: .color(outlines), lineWidth: 1) }
+                context.fill(shape, with: Self.bands(rect, (tone.bodySheen, 1), body: tone.bodyTop, tone.bodyBottom))
+                stripes.addPath(shape)
                 // Says what it gathered, never the folder's name; on stripes, in the title color.
                 if showLabels && rect.width > 56 && rect.height > 20 {
                     let text = Text(verbatim: "\(count) smaller items · \(ByteFormatter.string(from: total))")
@@ -80,18 +79,11 @@ struct TreemapRenderer {
                 }
 
             case .closedFolder where !item.hasTitleStrip:
-                // No room for a title: a block with a light tab on top marks it as a folder.
-                let radius = Self.radius(Self.blockRadius, rect)
-                let block = Path(roundedRect: rect, cornerRadius: radius)
-                context.fill(block, with: tone.body(rect))
-                let tab = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: min(Self.tabHeight * zoomScale, rect.height / 3))
-                context.fill(Path(roundedRect: tab, cornerRadii: .init(topLeading: radius, topTrailing: radius)),
-                             with: .color(tone.tab))
-                if !dark {
-                    // A light body needs a line under the tab for the tab to read.
-                    context.fill(Path(CGRect(x: tab.minX, y: tab.maxY, width: tab.width, height: 1)), with: .color(tone.edge))
-                }
-                if let outlines { context.stroke(block, with: .color(outlines), lineWidth: 1) }
+                // No room for a title: a block with a light tab on top marks it as a folder; a light
+                // body needs a line under the tab for the tab to read.
+                let tab = Self.snap(min(Self.tabHeight * zoomScale, rect.height / 3), scale)
+                context.fill(shape, with: dark ? Self.bands(rect, (tone.tab, tab), body: tone.bodyTop, tone.bodyBottom)
+                    : Self.bands(rect, (tone.tab, tab), (tone.edge, 1), body: tone.bodyTop, tone.bodyBottom))
                 if rect.height > 14 {
                     makeupBar(item.node, in: CGRect(x: rect.minX + 4, y: rect.maxY - Self.barHeight - 4,
                                                     width: rect.width - 8, height: Self.barHeight),
@@ -100,14 +92,8 @@ struct TreemapRenderer {
 
             case .openFolder, .closedFolder:
                 let open = item.kind == .openFolder
-                let radius = Self.radius(Self.frameRadius, rect)
-                let frame = Path(roundedRect: rect, cornerRadius: radius)
-                context.fill(frame, with: open ? .color(frameShade) : tone.body(rect))
-                let strip = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: min(stripHeight, rect.height))
-                context.fill(Path(roundedRect: strip, cornerRadii: .init(topLeading: radius, topTrailing: radius)),
-                             with: .color(tone.strip))
-                context.stroke(Path(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: max(0, radius - 0.5)),
-                               with: .color(outlines ?? tone.edge), lineWidth: 1)
+                context.fill(shape, with: Self.bands(rect, (tone.stripSheen, 1), (tone.strip, stripHeight - 1),
+                                                     body: open ? frameShade : tone.bodyTop, open ? frameShade : tone.bodyBottom))
                 if !open && rect.height > stripHeight + 14 {
                     makeupBar(item.node, in: CGRect(x: rect.minX + 7, y: rect.minY + stripHeight + 5,
                                                     width: min(rect.width - 14, 160), height: Self.barHeight),
@@ -121,6 +107,9 @@ struct TreemapRenderer {
                     titles.append((context.resolve(text), CGRect(x: rect.minX + 6, y: rect.minY + (stripHeight - 14) / 2,
                                                                  width: rect.width - 12, height: 14)))
                 }
+            }
+            if let outlines {
+                context.stroke(Self.outline(of: item, in: rect, inset: 0.5), with: .color(outlines), lineWidth: 1)
             }
         }
 
@@ -179,47 +168,69 @@ struct TreemapRenderer {
         clipped.stroke(lines, with: .color(dark ? .black.opacity(0.22) : .white.opacity(0.4)), lineWidth: 3)
     }
 
-    /// The corner radius of `item` drawn at `rect`, for overlays that trace its outline.
-    static func cornerRadius(of item: TreemapItem, in rect: CGRect) -> CGFloat {
-        radius(item.hasTitleStrip ? frameRadius : blockRadius, rect)
+    /// Where `item` lands on screen, its edges on whole device pixels so every gap is exact.
+    static func screenRect(of item: TreemapItem, zoomScale: CGFloat, panOffset: CGPoint, scale: CGFloat) -> CGRect {
+        let minX = snap(panOffset.x + item.rect.x * zoomScale, scale)
+        let minY = snap(panOffset.y + item.rect.y * zoomScale, scale)
+        return CGRect(x: minX, y: minY,
+                      width: snap(panOffset.x + (item.rect.x + item.rect.width) * zoomScale, scale) - minX,
+                      height: snap(panOffset.y + (item.rect.y + item.rect.height) * zoomScale, scale) - minY)
     }
 
-    /// Never rounder than a quarter of the shorter side, so small blocks keep their shape.
-    private static func radius(_ base: CGFloat, _ rect: CGRect) -> CGFloat {
-        min(base, min(rect.width, rect.height) / 4)
+    /// The item's continuous rounded shape at `rect`, or `inset` inside it, for the item and the
+    /// overlays that trace it. Never rounder than a quarter of the shorter side.
+    static func outline(of item: TreemapItem, in rect: CGRect, inset: CGFloat = 0) -> Path {
+        let radius = min(item.hasTitleStrip ? frameRadius : blockRadius, min(rect.width, rect.height) / 4)
+        return Path(roundedRect: rect.insetBy(dx: inset, dy: inset), cornerRadius: max(0, radius - inset), style: .continuous)
+    }
+
+    private static func snap(_ value: CGFloat, _ scale: CGFloat) -> CGFloat {
+        (value * scale).rounded() / scale
+    }
+
+    /// Top to bottom: each band a solid color `height` points tall with hard stops, then the body
+    /// fading from `top` to `bottom`.
+    private static func bands(_ rect: CGRect, _ bands: (Color, CGFloat)..., body top: Color, _ bottom: Color)
+        -> GraphicsContext.Shading {
+        var stops: [Gradient.Stop] = []
+        stops.reserveCapacity(bands.count * 2 + 2)
+        var y: CGFloat = 0
+        for (color, height) in bands {
+            stops.append(.init(color: color, location: min(1, y / rect.height)))
+            y += max(0, height) // never backwards, so the stops stay in order
+            stops.append(.init(color: color, location: min(1, y / rect.height)))
+        }
+        stops.append(.init(color: top, location: min(1, y / rect.height)))
+        stops.append(.init(color: bottom, location: 1))
+        return .linearGradient(Gradient(stops: stops),
+                               startPoint: CGPoint(x: rect.minX, y: rect.minY), endPoint: CGPoint(x: rect.minX, y: rect.maxY))
     }
 }
 
-/// The shades drawn from one base color, resolved once per draw.
+/// The shades drawn from one base color, resolved once per draw. A sheen is the top shade with
+/// low-opacity white over it.
 private struct Tone {
-    let tileGradient: Gradient, bodyGradient: Gradient
-    let strip: Color, edge: Color, tab: Color
+    let tileSheen: Color, tileTop: Color, tileBottom: Color
+    let bodySheen: Color, bodyTop: Color, bodyBottom: Color
+    let stripSheen: Color, strip: Color, edge: Color, tab: Color
 
     init(_ color: Color, dark: Bool, in environment: EnvironmentValues) {
         let base = color.resolve(in: environment)
-        func scaled(_ f: Float) -> Color {
-            Color(Color.Resolved(red: min(1, base.red * f), green: min(1, base.green * f), blue: min(1, base.blue * f)))
+        func scaled(_ f: Float) -> Color.Resolved {
+            Color.Resolved(red: min(1, base.red * f), green: min(1, base.green * f), blue: min(1, base.blue * f))
         }
-        func lighter(_ t: Float) -> Color {
-            Color(Color.Resolved(red: base.red + (1 - base.red) * t, green: base.green + (1 - base.green) * t,
-                                 blue: base.blue + (1 - base.blue) * t))
+        func lighter(_ c: Color.Resolved, _ t: Float) -> Color.Resolved {
+            Color.Resolved(red: c.red + (1 - c.red) * t, green: c.green + (1 - c.green) * t, blue: c.blue + (1 - c.blue) * t)
         }
-        tileGradient = Gradient(colors: [lighter(0.12), dark ? scaled(0.92) : Color(base)])
-        bodyGradient = Gradient(colors: dark ? [scaled(0.8), scaled(0.66)] : [lighter(0.3), lighter(0.2)])
-        strip = dark ? scaled(0.5) : lighter(0.5)
-        edge = dark ? scaled(0.6) : scaled(0.85)
-        tab = lighter(dark ? 0.4 : 0.9)
-    }
-
-    /// A file: the top a little lighter than the bottom.
-    func tile(_ rect: CGRect) -> GraphicsContext.Shading {
-        .linearGradient(tileGradient,
-                        startPoint: CGPoint(x: rect.minX, y: rect.minY), endPoint: CGPoint(x: rect.minX, y: rect.maxY))
-    }
-
-    /// A closed folder or a smallerItems block: quieter than a file of the same tone.
-    func body(_ rect: CGRect) -> GraphicsContext.Shading {
-        .linearGradient(bodyGradient,
-                        startPoint: CGPoint(x: rect.minX, y: rect.minY), endPoint: CGPoint(x: rect.minX, y: rect.maxY))
+        let sheen: Float = dark ? 0.14 : 0.3
+        let tileTop = lighter(base, 0.12), bodyTop = dark ? scaled(0.8) : lighter(base, 0.3)
+        let strip = dark ? scaled(0.5) : lighter(base, 0.5)
+        tileSheen = Color(lighter(tileTop, sheen)); self.tileTop = Color(tileTop)
+        tileBottom = Color(dark ? scaled(0.92) : base)
+        bodySheen = Color(lighter(bodyTop, sheen)); self.bodyTop = Color(bodyTop)
+        bodyBottom = Color(dark ? scaled(0.66) : lighter(base, 0.2))
+        stripSheen = Color(lighter(strip, sheen)); self.strip = Color(strip)
+        edge = Color(scaled(0.85)) // light mode's line under a tab
+        tab = Color(lighter(base, dark ? 0.4 : 0.9))
     }
 }
