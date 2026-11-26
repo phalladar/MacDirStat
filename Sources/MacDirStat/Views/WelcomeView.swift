@@ -65,7 +65,6 @@ struct WelcomeView: View {
                     Label("Back to \(returnName)", systemImage: "chevron.left")
                 }
                 .buttonStyle(.borderedProminent)
-                .controlSize(.regular)
             }
 
             // Custom folder option
