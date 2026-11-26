@@ -45,13 +45,13 @@ final class AppState {
     @ObservationIgnored var layoutTasks: [UUID: Task<Void, Never>] = [:]
     /// Folders the last scan skipped or read only partly, largest problem areas first.
     private(set) var skippedFolders: [FileNode] = []
-    /// The treeVersion at which the incomplete-scan banner was dismissed. A new scan clears it and
-    /// a partial rescan bumps treeVersion past it, so the banner returns with fresh results.
-    private var bannerDismissedAtVersion: Int?
+    /// Set when the incomplete-scan banner is dismissed. A new scan or a rescan clears it;
+    /// trashing an item does not.
+    private(set) var isIncompleteBannerDismissed = false
 
-    var isIncompleteBannerDismissed: Bool { bannerDismissedAtVersion == treeVersion }
+    func dismissIncompleteBanner() { isIncompleteBannerDismissed = true }
 
-    func dismissIncompleteBanner() { bannerDismissedAtVersion = treeVersion }
+    func showIncompleteBannerAgain() { isIncompleteBannerDismissed = false }
 
     var isScanning: Bool {
         if case .scanning = scanStatus { return true }
@@ -180,7 +180,7 @@ final class AppState {
 
     func setScanCompleted(root: FileNode) {
         rootNode = root
-        bannerDismissedAtVersion = nil
+        isIncompleteBannerDismissed = false
         treemapRoot = root
         selectedNode = root
         skippedFolders = Self.collectSkippedFolders(in: root)
@@ -191,7 +191,7 @@ final class AppState {
     func reset() {
         scanStatus = .idle
         rootNode = nil
-        bannerDismissedAtVersion = nil
+        isIncompleteBannerDismissed = false
         treemapRoot = nil
         selectedNode = nil
         breadcrumbs = []

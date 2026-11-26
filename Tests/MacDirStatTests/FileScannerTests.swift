@@ -488,7 +488,7 @@ func localIntegrationScan() async throws {
     #expect(state.skippedFolders.isEmpty)
 }
 
-@MainActor @Test func dismissedIncompleteBannerReturnsAfterNextScanOrRescan() async {
+@MainActor @Test func dismissedIncompleteBannerReturnsAfterScanButNotTrash() async {
     func makeRoot() -> (FileNode, FileNode) {
         let root = FileNode(inode: 1, name: "/", isDirectory: true)
         let a = FileNode(inode: 2, name: "a", isDirectory: true)
@@ -501,16 +501,16 @@ func localIntegrationScan() async throws {
     state.setScanCompleted(root: root)
     #expect(!state.isIncompleteBannerDismissed)
 
+    // Trashing replaces a subtree with nothing and leaves the banner dismissed.
     state.dismissIncompleteBanner()
+    await state.replace(a, with: nil)
     #expect(state.isIncompleteBannerDismissed)
 
-    // A partial rescan splices in a new subtree and brings the banner back.
-    let fresh = FileNode(inode: 2, name: "/a", isDirectory: true)
-    fresh.computeAggregates()
-    await state.replace(a, with: fresh)
+    // A partial rescan (ScanCoordinator.rescan) brings it back.
+    state.showIncompleteBannerAgain()
     #expect(!state.isIncompleteBannerDismissed)
 
-    // So does a full rescan, even after the tree changed before.
+    // So does a full scan.
     state.dismissIncompleteBanner()
     state.setScanCompleted(root: makeRoot().0)
     #expect(!state.isIncompleteBannerDismissed)
