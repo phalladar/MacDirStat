@@ -62,8 +62,9 @@ final class AppState {
         return false
     }
 
-    var hasData: Bool {
-        rootNode != nil
+    /// A scanned tree on screen, not the welcome screen over one: what the treemap controls act on.
+    var hasTree: Bool {
+        scanStatus == .completed && treemapRoot != nil
     }
 
     var selectedDirectory: FileNode? {
@@ -91,11 +92,11 @@ final class AppState {
 
     func collapseAll() { if !folderOverrides.isEmpty { folderOverrides = [:] } }
 
-    var canCollapseAll: Bool { showsFolders && !folderOverrides.isEmpty }
+    var canCollapseAll: Bool { hasTree && showsFolders && !folderOverrides.isEmpty }
 
-    var canMoreDetail: Bool { showsFolders && detailLevel < Self.detailRange.upperBound }
+    var canMoreDetail: Bool { hasTree && showsFolders && detailLevel < Self.detailRange.upperBound }
 
-    var canLessDetail: Bool { showsFolders && detailLevel > Self.detailRange.lowerBound }
+    var canLessDetail: Bool { hasTree && showsFolders && detailLevel > Self.detailRange.lowerBound }
 
     func moreDetail() { detailLevel = min(detailLevel + 1, Self.detailRange.upperBound) }
 

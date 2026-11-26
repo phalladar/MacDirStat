@@ -33,6 +33,11 @@ struct MacDirStatApp: App {
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
     @State private var appState = AppState()
 
+    init() {
+        // Undocumented AppKit default, app-wide: tooltips after 0.4 s. A value the user set still wins.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 400])
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -70,17 +75,18 @@ struct TreemapCommands: Commands {
     @FocusedValue(\.rescanAction) private var rescan
 
     var body: some Commands {
-        let hasTree = appState.scanStatus == .completed
+        let hasTree = appState.hasTree
         CommandGroup(before: .sidebar) {
             Button("More Detail") { appState.moreDetail() }
                 .keyboardShortcut("+")
-                .disabled(!hasTree || !appState.canMoreDetail)
+                .disabled(!appState.canMoreDetail)
             Button("Less Detail") { appState.lessDetail() }
                 .keyboardShortcut("-")
-                .disabled(!hasTree || !appState.canLessDetail)
+                .disabled(!appState.canLessDetail)
             Button("Collapse All") { appState.collapseAll() }
-                .disabled(!hasTree || !appState.canCollapseAll)
+                .disabled(!appState.canCollapseAll)
             Toggle("Show Folders", isOn: Bindable(appState).showsFolders)
+                .disabled(!hasTree)
 
             Divider()
 
@@ -90,6 +96,7 @@ struct TreemapCommands: Commands {
             }
             .pickerStyle(.inline)
             .labelsHidden()
+            .disabled(!hasTree)
 
             Divider()
 

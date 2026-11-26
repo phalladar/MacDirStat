@@ -89,4 +89,16 @@ struct AppStateTreemapTests {
         #expect(t.state.treemapRoot === t.c)
         #expect(t.state.expandedIDs.contains(t.c.id))
     }
+
+    @Test func treeControlsNeedATreeOnScreen() {
+        let fresh = AppState()
+        #expect(!fresh.hasTree && !fresh.canMoreDetail && !fresh.canLessDetail)
+        let t = Tree()
+        #expect(t.state.hasTree && t.state.canMoreDetail)
+        // The welcome screen over a scanned tree: nothing on screen for them to act on.
+        t.state.scanStatus = .idle
+        #expect(!t.state.hasTree && !t.state.canMoreDetail && !t.state.canLessDetail)
+        t.state.setFolderOpen(t.a, true)
+        #expect(!t.state.canCollapseAll)
+    }
 }

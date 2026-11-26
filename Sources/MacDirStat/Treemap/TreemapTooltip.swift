@@ -22,6 +22,14 @@ func makeupRows(_ breakdown: [(category: FileCategory, size: Int64)], total: Int
     return rows.filter { $0.fraction >= 0.01 }
 }
 
+/// A smallerItems block's last tooltip line: a double click opens the folder that holds them,
+/// unless it is the one shown.
+@MainActor func smallerItemsHint(for item: TreemapItem, shown root: FileNode, sizeMetric: SizeMetric) -> String? {
+    guard item.isSmallerItems,
+          let folder = TreemapView.drillDownTarget(for: item.node, shown: root, sizeMetric: sizeMetric) else { return nil }
+    return "Double-click to open \(folder.name)"
+}
+
 /// The pointer over the treemap. Only the tooltip reads its location, so following the
 /// cursor redraws the tooltip and nothing else.
 @MainActor @Observable final class TreemapCursor {
@@ -75,6 +83,9 @@ private struct TreemapTooltip: View {
                 Text(verbatim: "\(count.formatted()) smaller items · \(ByteFormatter.string(from: size))")
                     .font(.system(size: 13, weight: .semibold))
                 pathText(path)
+                if let hint = smallerItemsHint(for: item, shown: root, sizeMetric: sizeMetric) {
+                    Text(verbatim: hint).foregroundStyle(.secondary)
+                }
             } else {
                 Text(verbatim: node.name).font(.system(size: 13, weight: .semibold))
                 Text(verbatim: summary(node))

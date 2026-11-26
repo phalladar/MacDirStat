@@ -17,9 +17,8 @@ struct ContentView: View {
                 )
                     .navigationSplitViewColumnWidth(min: 200, ideal: 300, max: 400)
             } else {
-                Text("No data")
-                    .foregroundStyle(.secondary)
-                    .frame(maxHeight: .infinity)
+                EmptyState("No Scan", systemImage: "internaldrive",
+                           description: "Choose a drive or folder to see what takes up space.")
             }
         } detail: {
             ZStack {
@@ -100,9 +99,8 @@ struct ContentView: View {
                 DetailPanelView(node: selected, sizeMetric: appState.sizeMetric, treeVersion: appState.treeVersion)
                     .inspectorColumnWidth(min: 250, ideal: 300, max: 400)
             } else {
-                Text("Select an item to view details")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                EmptyState("No Selection", systemImage: "info.circle",
+                           description: "Select a folder or file to see its details.")
             }
         }
         .onExitCommand {
@@ -142,36 +140,40 @@ struct ContentView: View {
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        // Always there, only disabled, and Rescan's tooltip never changes: adding, removing or
+        // retitling an item lays the whole toolbar out again on every navigation.
         ToolbarItem(placement: .navigation) {
-            if appState.treemapRoot?.parent != nil {
-                Button("Back", systemImage: "chevron.left") { appState.navigateUp() }
-            }
+            Button("Back", systemImage: "chevron.left") { appState.navigateUp() }
+                .help("Back")
+                .disabled(!appState.hasTree || appState.treemapRoot?.parent == nil)
         }
 
         ToolbarItem(placement: .navigation) {
             Menu {
                 Button("Open Folder...") { openFolder() }
             } label: {
-                Label("Scan", systemImage: "plus.circle")
+                Label("New Scan", systemImage: "internaldrive")
             } primaryAction: {
                 selectAndScan()
             }
-            .help("Choose a drive to scan")
+            .help("Choose a drive or folder to scan")
         }
 
         ToolbarItem(placement: .navigation) {
             Button("Rescan", systemImage: "arrow.clockwise") {
                 rescan(everything: NSEvent.modifierFlags.contains(.option))
             }
-            .help(appState.treemapRoot.map { "Rescan \($0.displayName)" } ?? "Rescan")
+            .help("Rescan the shown folder (⌥ for everything)")
             .disabled(!canRescan)
         }
 
         ToolbarItem(placement: .primaryAction) {
             ControlGroup {
                 Button("Less Detail", systemImage: "minus") { appState.lessDetail() }
+                    .help("Less Detail")
                     .disabled(!appState.canLessDetail)
                 Button("More Detail", systemImage: "plus") { appState.moreDetail() }
+                    .help("More Detail")
                     .disabled(!appState.canMoreDetail)
             } label: {
                 Label("Detail", systemImage: "square.grid.3x3")
@@ -180,33 +182,32 @@ struct ContentView: View {
 
         ToolbarItem(placement: .primaryAction) {
             Picker("Color", selection: Bindable(appState).colorMode) {
-                Label("Color by Type", systemImage: "square.grid.2x2").tag(TreemapColorMode.type)
-                Label("Color by Folder", systemImage: "folder").tag(TreemapColorMode.folder)
+                Label("Color by Type", systemImage: "square.grid.2x2").help("Color by Type").tag(TreemapColorMode.type)
+                Label("Color by Folder", systemImage: "folder").help("Color by Folder").tag(TreemapColorMode.folder)
             }
             .pickerStyle(.segmented)
             .labelStyle(.iconOnly)
+            .disabled(!appState.hasTree)
         }
 
         ToolbarItem(placement: .primaryAction) {
             Toggle("Show Folders", systemImage: "rectangle.3.group", isOn: Bindable(appState).showsFolders)
                 .help("Show Folders")
+                .disabled(!appState.hasTree)
         }
 
         ToolbarItem(placement: .primaryAction) {
-            Picker("Size", selection: Binding(get: { appState.sizeMetric }, set: { metric in
-                appState.sizeMetric = metric
-                // Picking a metric after Scan Drive goes back to the scanned tree.
-                if appState.scanStatus == .idle, appState.rootNode != nil {
-                    appState.scanStatus = .completed
-                }
-            })) {
+            Picker("Size", selection: Bindable(appState).sizeMetric) {
                 ForEach(SizeMetric.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.menu)
+            .help("Size Metric")
+            .disabled(!appState.hasTree)
         }
 
         ToolbarItem(placement: .primaryAction) {
             Button("Inspector", systemImage: "sidebar.right", action: appState.toggleInspector)
+                .help(appState.showInspector ? "Hide Inspector" : "Show Inspector")
         }
     }
 
@@ -233,6 +234,33 @@ struct ContentView: View {
         if let path = FolderPicker.chooseFolder() {
             coordinator?.startScan(path: path)
         }
+    }
+}
+
+// MARK: - Empty State
+
+/// A column with nothing to show, as quiet as a line of secondary text: a small icon, the title
+/// at body size, and a caption.
+private struct EmptyState: View {
+    let title: String, systemImage: String, description: String
+
+    init(_ title: String, systemImage: String, description: String) {
+        self.title = title
+        self.systemImage = systemImage
+        self.description = description
+    }
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: systemImage).font(.title3)
+            Text(title)
+            Text(description).font(.caption).foregroundStyle(.tertiary)
+        }
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
     }
 }
 

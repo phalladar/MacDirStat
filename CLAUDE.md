@@ -42,7 +42,7 @@ Scan flow: User picks folder â†’ **ScanCoordinator** launches **FileScanner** â†
 - All data types crossing async boundaries are `Sendable`
 - FileNode uses weak parent references to break retain cycles
 - FileScanner deduplicates hard links and firmlinks by tracking seen inodes
-- Menu commands never use notifications. `TreemapCommands` (View menu) calls the shared `AppState` directly for detail, color, Show Folders, Back and the inspector; only per-window actions (Open Folder, Actual Size, Rescan) reach the frontmost window through `focusedSceneValue`
+- Menu commands never use notifications. `TreemapCommands` (View menu) calls the shared `AppState` directly for detail, color, Show Folders, Back and the inspector; only per-window actions (Open Folder, Actual Size, Rescan) reach the frontmost window through `focusedSceneValue`. Tree controls in the menu and toolbar disable on `AppState.hasTree` (through the `can*` helpers), so the welcome screen leaves them off
 - The sidebar expands to a folder only on navigation (drill down, breadcrumb, Back, or a sidebar pick outside the shown folder); selecting or opening in the treemap leaves it alone
 - Local SwiftPM builds record SDK 15.0 while CI links the macOS 26 SDK, which changes AppKit/SwiftUI behavior; test release builds from CI (or stamp a local build with `vtool -set-build-version`) before trusting a local result
 - TreemapView uses Canvas for rendering (not individual SwiftUI views) for performance

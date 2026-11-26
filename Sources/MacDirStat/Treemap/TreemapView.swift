@@ -412,7 +412,7 @@ struct TreemapAccessibilityLayer: View, Equatable {
     let items: [TreemapItem]
     let root: FileNode
     let sizeMetric: SizeMetric
-    @Environment(AppState.self) var appState
+    @Environment(AppState.self) private var appState
 
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.generation == rhs.generation && lhs.sizeMetric == rhs.sizeMetric

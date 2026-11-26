@@ -114,3 +114,18 @@ import Testing
     #expect(layer != TreemapAccessibilityLayer(generation: 5, items: [file], root: root, sizeMetric: .allocatedSize))
     #expect(layer != TreemapAccessibilityLayer(generation: 4, items: [file], root: root, sizeMetric: .fileSize))
 }
+
+@MainActor @Test func smallerItemsHintNamesTheFolderUnlessItIsShown() {
+    let root = FileNode(inode: 1, name: "root", isDirectory: true)
+    let folder = FileNode(inode: 2, name: "Caches", isDirectory: true)
+    root.addChild(folder)
+    for inode in 3...4 { folder.addChild(FileNode(inode: UInt64(inode), name: "f\(inode)", isDirectory: false, ownSize: 10, allocatedSize: 10)) }
+    root.computeAggregates()
+    let block = TreemapItem(id: 0, node: folder, rect: TreemapRect(x: 0, y: 0, width: 10, height: 10),
+                            depth: 2, kind: .smallerItems(count: 2, size: 20), branch: 0)
+    #expect(smallerItemsHint(for: block, shown: root, sizeMetric: .allocatedSize) == "Double-click to open Caches")
+    // Already the shown folder: a double click does nothing, so no hint.
+    #expect(smallerItemsHint(for: block, shown: folder, sizeMetric: .allocatedSize) == nil)
+    let file = TreemapItem(id: 1, node: folder.children[0], rect: block.rect, depth: 3, kind: .file, branch: 0)
+    #expect(smallerItemsHint(for: file, shown: root, sizeMetric: .allocatedSize) == nil)
+}
