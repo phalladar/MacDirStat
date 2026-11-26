@@ -42,6 +42,7 @@ struct MacDirStatApp: App {
         .defaultSize(width: 1200, height: 800)
         .commands {
             OpenFolderCommands()
+            TreemapCommands(appState: appState)
         }
     }
 }
@@ -57,6 +58,59 @@ struct OpenFolderCommands: Commands {
             }
             .keyboardShortcut("o", modifiers: .command)
             .disabled(openFolder == nil)
+        }
+    }
+}
+
+/// The treemap's View menu items. Detail, color, Back and the inspector live in the shared
+/// `AppState`; zoom and rescan belong to a window, so they come from the key window's focused values.
+struct TreemapCommands: Commands {
+    let appState: AppState
+    @FocusedValue(\.resetZoomAction) private var resetZoom
+    @FocusedValue(\.rescanAction) private var rescan
+
+    var body: some Commands {
+        let hasTree = appState.scanStatus == .completed
+        CommandGroup(before: .sidebar) {
+            Button("More Detail") { appState.moreDetail() }
+                .keyboardShortcut("+")
+                .disabled(!hasTree || !appState.canMoreDetail)
+            Button("Less Detail") { appState.lessDetail() }
+                .keyboardShortcut("-")
+                .disabled(!hasTree || !appState.canLessDetail)
+            Button("Collapse All") { appState.collapseAll() }
+                .disabled(!hasTree || appState.folderOverrides.isEmpty)
+
+            Divider()
+
+            Picker("Color", selection: Bindable(appState).colorMode) {
+                Text("Color by Type").tag(TreemapColorMode.type)
+                Text("Color by Folder").tag(TreemapColorMode.folder)
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+
+            Divider()
+
+            Button("Actual Size") { resetZoom?() }
+                .keyboardShortcut("0")
+                .disabled(resetZoom == nil)
+            Button("Back") { appState.navigateUp() }
+                .keyboardShortcut("[")
+                .disabled(!hasTree || appState.treemapRoot?.parent == nil)
+            Button(appState.treemapRoot.map { "Rescan \u{201C}\($0.displayName)\u{201D}" } ?? "Rescan") { rescan?(false) }
+                .keyboardShortcut("r")
+                .disabled(rescan == nil)
+            Button("Rescan Everything") { rescan?(true) }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(rescan == nil)
+
+            Divider()
+
+            Button(appState.showInspector ? "Hide Inspector" : "Show Inspector", action: appState.toggleInspector)
+            .keyboardShortcut("i", modifiers: [.command, .option])
+
+            Divider()
         }
     }
 }

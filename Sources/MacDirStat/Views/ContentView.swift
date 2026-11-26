@@ -5,9 +5,6 @@ struct ContentView: View {
     @State private var coordinator: ScanCoordinator?
     /// The scanned volume's usage for the status bar, read once per scan.
     @State private var volumeSummary = ""
-    @FocusedValue(\.zoomInAction) private var zoomIn
-    @FocusedValue(\.zoomOutAction) private var zoomOut
-    @FocusedValue(\.resetZoomAction) private var resetZoom
 
     var body: some View {
         @Bindable var state = appState
@@ -112,69 +109,7 @@ struct ContentView: View {
             // Esc selects the folder the treemap shows, which draws no outline.
             if let root = appState.treemapRoot { appState.selectedNode = root }
         }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    if let path = appState.rootNode?.path {
-                        coordinator?.startScan(path: path)
-                    }
-                } label: {
-                    Label("Rescan", systemImage: "arrow.clockwise")
-                }
-                .disabled(appState.rootNode == nil)
-
-                Button {
-                    selectAndScan()
-                } label: {
-                    Label("Scan Drive", systemImage: "internaldrive.fill")
-                }
-
-                SizeMetricPicker(sizeMetric: $state.sizeMetric) {
-                    if appState.scanStatus == .idle, appState.rootNode != nil {
-                        appState.scanStatus = .completed
-                    }
-                }
-
-                Button {
-                    zoomIn?()
-                } label: {
-                    Label("Zoom In", systemImage: "plus.magnifyingglass")
-                }
-                .disabled(zoomIn == nil)
-
-                Button {
-                    zoomOut?()
-                } label: {
-                    Label("Zoom Out", systemImage: "minus.magnifyingglass")
-                }
-                .disabled(zoomOut == nil)
-
-                Button {
-                    resetZoom?()
-                } label: {
-                    Label("Reset Zoom", systemImage: "1.magnifyingglass")
-                }
-                .disabled(resetZoom == nil)
-
-                Button {
-                    // On macOS 27, animating the inspector beside the treemap's .contextMenu
-                    // loops AppKit's constraint pass until it throws. Toggle without animation.
-                    withTransaction(\.disablesAnimations, true) { appState.showInspector.toggle() }
-                } label: {
-                    Label("Inspector", systemImage: "sidebar.right")
-                }
-            }
-
-            ToolbarItem(placement: .navigation) {
-                if appState.treemapRoot?.parent != nil {
-                    Button {
-                        appState.navigateUp()
-                    } label: {
-                        Label("Back", systemImage: "chevron.left")
-                    }
-                }
-            }
-        }
+        .toolbar { toolbar }
         .task(id: appState.rootNode.map(ObjectIdentifier.init)) {
             let path = appState.rootNode?.path
             volumeSummary = await Task.detached { path.map(Self.volumeSummary) ?? "" }.value
@@ -184,9 +119,15 @@ struct ContentView: View {
                 coordinator = ScanCoordinator(appState: appState)
             }
         }
-        .focusedSceneValue(\.openFolderAction, {
-            openFolder()
-        })
+        .background {
+            // ⌘= beside the View menu's ⌘+, which AppKit matches only with Shift held.
+            Button("", action: appState.moreDetail)
+                .keyboardShortcut("=")
+                .disabled(!appState.canMoreDetail)
+                .hidden()
+        }
+        .focusedSceneValue(\.openFolderAction, openFolder)
+        .focusedSceneValue(\.rescanAction, canRescan ? { rescan(everything: $0) } : nil)
     }
 
     /// "Macintosh HD · 782 GB used · 81.9 GB free" for the volume holding `path`.
@@ -200,6 +141,84 @@ struct ContentView: View {
         return "\(name) · \(used) used · \(ByteFormatter.string(from: free)) free"
     }
 
+    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            if appState.treemapRoot?.parent != nil {
+                Button("Back", systemImage: "chevron.left") { appState.navigateUp() }
+            }
+        }
+
+        ToolbarItem(placement: .navigation) {
+            Menu {
+                Button("Open Folder...") { openFolder() }
+            } label: {
+                Label("Scan", systemImage: "plus.circle")
+            } primaryAction: {
+                selectAndScan()
+            }
+            .help("Choose a drive to scan")
+        }
+
+        ToolbarItem(placement: .navigation) {
+            Button("Rescan", systemImage: "arrow.clockwise") {
+                rescan(everything: NSEvent.modifierFlags.contains(.option))
+            }
+            .help(appState.treemapRoot.map { "Rescan \($0.displayName)" } ?? "Rescan")
+            .disabled(!canRescan)
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            ControlGroup {
+                Button("Less Detail", systemImage: "minus") { appState.lessDetail() }
+                    .disabled(!appState.canLessDetail)
+                Button("More Detail", systemImage: "plus") { appState.moreDetail() }
+                    .disabled(!appState.canMoreDetail)
+            } label: {
+                Label("Detail", systemImage: "square.grid.3x3")
+            }
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Picker("Color", selection: Bindable(appState).colorMode) {
+                Label("Color by Type", systemImage: "square.grid.2x2").tag(TreemapColorMode.type)
+                Label("Color by Folder", systemImage: "folder").tag(TreemapColorMode.folder)
+            }
+            .pickerStyle(.segmented)
+            .labelStyle(.iconOnly)
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Picker("Size", selection: Binding(get: { appState.sizeMetric }, set: { metric in
+                appState.sizeMetric = metric
+                // Picking a metric after Scan Drive goes back to the scanned tree.
+                if appState.scanStatus == .idle, appState.rootNode != nil {
+                    appState.scanStatus = .completed
+                }
+            })) {
+                ForEach(SizeMetric.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.menu)
+        }
+
+        ToolbarItem(placement: .primaryAction) {
+            Button("Inspector", systemImage: "sidebar.right", action: appState.toggleInspector)
+        }
+    }
+
+    private var canRescan: Bool {
+        appState.scanStatus == .completed && appState.busyID == nil
+    }
+
+    /// Rescans the folder the treemap shows, or the whole scan when it shows the root or `everything` is set.
+    private func rescan(everything: Bool) {
+        guard let root = appState.rootNode, let shown = appState.treemapRoot else { return }
+        if everything || shown === root {
+            coordinator?.startScan(path: root.path)
+        } else {
+            coordinator?.rescan(shown)
+        }
+    }
+
     private func selectAndScan() {
         coordinator?.cancel()
         appState.scanStatus = .idle
@@ -209,35 +228,6 @@ struct ContentView: View {
         if let path = FolderPicker.chooseFolder() {
             coordinator?.startScan(path: path)
         }
-    }
-}
-
-// MARK: - Size Metric Picker
-
-struct SizeMetricPicker: View {
-    @Binding var sizeMetric: SizeMetric
-    var onTap: () -> Void
-
-    var body: some View {
-        HStack(spacing: 0) {
-            ForEach(SizeMetric.allCases, id: \.self) { metric in
-                Button {
-                    sizeMetric = metric
-                    onTap()
-                } label: {
-                    Text(metric.rawValue)
-                        .font(.body)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(metric.rawValue)
-                .accessibilityAddTraits(sizeMetric == metric ? .isSelected : [])
-                .background(sizeMetric == metric ? Color.accentColor.opacity(0.2) : Color.clear)
-            }
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
     }
 }
 
@@ -257,40 +247,42 @@ struct BreadcrumbBar: View {
                             .foregroundStyle(.tertiary)
                     }
 
+                    let isLast = index == breadcrumbs.count - 1
                     Button {
                         onNavigate(node)
                     } label: {
-                        Text(node.name)
+                        Text(node.displayName)
                             .font(.caption)
                             .lineLimit(1)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .foregroundStyle(isLast ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                            .background(isLast ? AnyShapeStyle(.tint.opacity(0.18)) : AnyShapeStyle(.quaternary),
+                                        in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(index == breadcrumbs.count - 1 ? .primary : .secondary)
+                    .help(node.path)
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.vertical, 5)
         }
         .background(.bar)
     }
 }
 
-// MARK: - Focused Value for Menu Commands
+// MARK: - Focused Values for Menu Commands
 
 struct OpenFolderActionKey: FocusedValueKey {
     typealias Value = () -> Void
 }
 
-struct ZoomInActionKey: FocusedValueKey {
-    typealias Value = () -> Void
-}
-
-struct ZoomOutActionKey: FocusedValueKey {
-    typealias Value = () -> Void
-}
-
 struct ResetZoomActionKey: FocusedValueKey {
     typealias Value = () -> Void
+}
+
+struct RescanActionKey: FocusedValueKey {
+    typealias Value = (_ everything: Bool) -> Void
 }
 
 extension FocusedValues {
@@ -299,18 +291,14 @@ extension FocusedValues {
         set { self[OpenFolderActionKey.self] = newValue }
     }
 
-    var zoomInAction: (() -> Void)? {
-        get { self[ZoomInActionKey.self] }
-        set { self[ZoomInActionKey.self] = newValue }
-    }
-
-    var zoomOutAction: (() -> Void)? {
-        get { self[ZoomOutActionKey.self] }
-        set { self[ZoomOutActionKey.self] = newValue }
-    }
-
     var resetZoomAction: (() -> Void)? {
         get { self[ResetZoomActionKey.self] }
         set { self[ResetZoomActionKey.self] = newValue }
+    }
+
+    /// Rescans the front window's shown folder, or everything when passed `true`.
+    var rescanAction: ((_ everything: Bool) -> Void)? {
+        get { self[RescanActionKey.self] }
+        set { self[RescanActionKey.self] = newValue }
     }
 }

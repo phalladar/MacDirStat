@@ -88,9 +88,19 @@ final class AppState {
 
     func collapseAll() { if !folderOverrides.isEmpty { folderOverrides = [:] } }
 
+    var canMoreDetail: Bool { detailLevel < Self.detailRange.upperBound }
+
+    var canLessDetail: Bool { detailLevel > Self.detailRange.lowerBound }
+
     func moreDetail() { detailLevel = min(detailLevel + 1, Self.detailRange.upperBound) }
 
     func lessDetail() { detailLevel = max(detailLevel - 1, Self.detailRange.lowerBound) }
+
+    func toggleInspector() {
+        // On macOS 27, animating the inspector beside the treemap's .contextMenu
+        // loops AppKit's constraint pass until it throws. Toggle without animation.
+        withTransaction(\.disablesAnimations, true) { showInspector.toggle() }
+    }
 
     func setExpanded(_ node: FileNode, _ expanded: Bool) {
         if expanded {

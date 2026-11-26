@@ -177,14 +177,6 @@ struct TreemapView: View {
 
         TreemapStatusBar(item: hoveredItem, volumeSummary: volumeSummary, sizeMetric: sizeMetric)
         }
-        .focusedSceneValue(\.zoomInAction) {
-            let center = CGPoint(x: lastSize.width / 2, y: lastSize.height / 2)
-            performZoom(by: 0.3, centeredAt: center, viewSize: lastSize)
-        }
-        .focusedSceneValue(\.zoomOutAction) {
-            let center = CGPoint(x: lastSize.width / 2, y: lastSize.height / 2)
-            performZoom(by: -0.3, centeredAt: center, viewSize: lastSize)
-        }
         .focusedSceneValue(\.resetZoomAction) {
             zoomScale = 1.0
             panOffset = .zero

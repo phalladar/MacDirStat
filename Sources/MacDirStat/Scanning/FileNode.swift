@@ -39,6 +39,11 @@ final class FileNode: Identifiable, @unchecked Sendable {
         }
     }
 
+    /// The scan root's name is its full path; show its last component, like Finder.
+    var displayName: String {
+        parent == nil ? URL(fileURLWithPath: name).lastPathComponent : name
+    }
+
     init(
         inode: UInt64,
         name: String,
