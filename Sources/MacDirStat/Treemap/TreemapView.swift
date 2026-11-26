@@ -19,6 +19,7 @@ struct TreemapView: View {
     let volumeSummary: String
     @Environment(AppState.self) private var appState
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var items: [TreemapItem] = []
     @State private var hoveredItemID: Int?
@@ -34,6 +35,9 @@ struct TreemapView: View {
     @State private var labelDebounce: Task<Void, Never>?
     /// Key of this view's layout in AppState.layoutTasks.
     @State private var layoutID = UUID()
+    /// From the previous layout to `items`, while it runs; hit testing already uses `items`.
+    @State private var transition: TreemapTransition?
+    @State private var transitionStart = Date()
 
     private var hoveredItem: TreemapItem? {
         guard let id = hoveredItemID, items.indices.contains(id) else { return nil }
@@ -58,26 +62,32 @@ struct TreemapView: View {
         GeometryReader { geometry in
             ZStack {
                 // Base treemap — only redraws when items change
-                TreemapBaseCanvas(
-                    items: items,
-                    zoomScale: zoomScale,
-                    panOffset: panOffset,
-                    showLabels: showLabels,
-                    sizeMetric: sizeMetric,
-                    colorMode: appState.colorMode,
-                    contrast: contrast
-                )
+                if let transition {
+                    // In the tree only while a transition runs, so an idle treemap gets no ticks.
+                    TimelineView(.animation) { timeline in
+                        let elapsed = timeline.date.timeIntervalSince(transitionStart)
+                        let frame = transition.frame(at: TreemapTransition.progress(elapsed: elapsed))
+                        baseCanvas(items: frame.map { $0.item.moved(to: $0.rect) }, opacities: frame.map(\.opacity))
+                    }
+                    .task(id: transitionStart) {
+                        try? await Task.sleep(for: .seconds(TreemapTransition.duration))
+                        if !Task.isCancelled { self.transition = nil }
+                    }
+                } else {
+                    baseCanvas(items: items, opacities: nil)
+                }
 
+                // Both overlays trace `items`, where the transition ends; they wait for it.
                 TreemapSelectionOverlay(
                     items: items,
-                    selectedItemID: selectedItemID,
+                    selectedItemID: transition == nil ? selectedItemID : nil,
                     zoomScale: zoomScale,
                     panOffset: panOffset
                 )
 
                 // Lightweight hover overlay — redraws only the single highlight rect
                 TreemapHoverOverlay(
-                    item: hoveredItem,
+                    item: transition == nil ? hoveredItem : nil,
                     zoomScale: zoomScale,
                     panOffset: panOffset
                 )
@@ -148,7 +158,7 @@ struct TreemapView: View {
             .onChange(of: root.id) {
                 zoomScale = 1.0
                 panOffset = .zero
-                recomputeLayout(size: geometry.size)
+                recomputeLayout(size: geometry.size, animated: true)
             }
             .onChange(of: sizeMetric) {
                 recomputeLayout(size: geometry.size)
@@ -160,7 +170,7 @@ struct TreemapView: View {
                 recomputeLayout(size: geometry.size)
             }
             .onChange(of: appState.folderOverrides) {
-                recomputeLayout(size: geometry.size)
+                recomputeLayout(size: geometry.size, animated: true)
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -179,6 +189,19 @@ struct TreemapView: View {
             zoomScale = 1.0
             panOffset = .zero
         }
+    }
+
+    private func baseCanvas(items: [TreemapItem], opacities: [Double]?) -> TreemapBaseCanvas {
+        TreemapBaseCanvas(
+            items: items,
+            opacities: opacities,
+            zoomScale: zoomScale,
+            panOffset: panOffset,
+            showLabels: showLabels,
+            sizeMetric: sizeMetric,
+            colorMode: appState.colorMode,
+            contrast: contrast
+        )
     }
 
     private func screenToContent(_ point: CGPoint) -> CGPoint {
@@ -269,10 +292,13 @@ struct TreemapView: View {
         return target === root ? nil : target
     }
 
-    private func recomputeLayout(size: CGSize) {
+    /// `animated` is for navigation and opening or closing folders; resizes and metric or detail
+    /// changes swap at once, as does everything under Reduce Motion.
+    private func recomputeLayout(size: CGSize, animated: Bool = false) {
         guard size.width > 0 && size.height > 0 else { return }
         lastSize = size
 
+        let animated = animated && !reduceMotion
         let metric = sizeMetric
         let level = appState.detailLevel
         let overrides = appState.folderOverrides
@@ -300,6 +326,18 @@ struct TreemapView: View {
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
+                if animated && !items.isEmpty {
+                    let now = Date()
+                    transition = if let running = transition {
+                        TreemapTransition(from: running, at: TreemapTransition.progress(elapsed: now.timeIntervalSince(transitionStart)),
+                                          to: newItems)
+                    } else {
+                        TreemapTransition(from: items, to: newItems)
+                    }
+                    transitionStart = now
+                } else {
+                    transition = nil
+                }
                 items = newItems
                 itemIndexByNode = index
                 smallerItemsByFolder = smaller
@@ -326,6 +364,7 @@ func isOnChevron(_ point: CGPoint, of item: TreemapItem, zoomScale: CGFloat = 1)
 /// the hovered item changes.
 private struct TreemapBaseCanvas: View {
     let items: [TreemapItem]
+    let opacities: [Double]?
     let zoomScale: CGFloat
     let panOffset: CGPoint
     let showLabels: Bool
@@ -344,7 +383,8 @@ private struct TreemapBaseCanvas: View {
                 showLabels: showLabels,
                 sizeMetric: sizeMetric,
                 colorMode: colorMode,
-                contrast: contrast
+                contrast: contrast,
+                opacities: opacities
             )
             renderer.draw(in: &context, size: size)
         }

@@ -10,6 +10,8 @@ struct TreemapRenderer {
     let sizeMetric: SizeMetric
     let colorMode: TreemapColorMode
     let contrast: ColorSchemeContrast
+    /// Each item's opacity while a transition runs; nil, the idle case, draws everything opaque.
+    var opacities: [Double]? = nil
 
     /// Folder color mode: one per child of the shown folder, by size, wrapping after the last.
     private static let branchColors: [Color] = [.blue, .green, .orange, .purple, .red, .teal, .pink, .indigo, .brown]
@@ -48,13 +50,18 @@ struct TreemapRenderer {
         let titleColor: Color = dark ? .white : .black
         let stripHeight = Self.snap(TreemapMetrics.titleHeight * zoomScale, scale)
 
+        let fading = opacities != nil
         var stripes = Path()
         var titles: [(GraphicsContext.ResolvedText, CGRect)] = []
         var labels: [(GraphicsContext.ResolvedText, CGRect)] = []
 
-        for item in items {
+        for (index, item) in items.enumerated() {
             let rect = Self.screenRect(of: item, zoomScale: zoomScale, panOffset: panOffset, scale: scale)
             guard rect.intersects(viewport), rect.width >= 0.5, rect.height >= 0.5 else { continue }
+            let opacity = opacities?[index] ?? 1
+            if fading { context.opacity = opacity }
+            // Text is most of a frame's cost, so an item fading in or out goes without.
+            let labeled = showLabels && opacity == 1
             let tone = colorMode == .folder ? tones[item.branch % tones.count]
                 : item.kind == .file ? categoryTones[item.node.category.index] : tones[0]
             // Each item is one fill of one shape, its bands hard stops of one gradient, so its edge
@@ -64,15 +71,16 @@ struct TreemapRenderer {
             switch item.kind {
             case .file:
                 context.fill(shape, with: Self.bands(rect, (tone.tileSheen, 1), body: tone.tileTop, tone.tileBottom))
-                if showLabels, let label = tileLabel(item.node.name, item.node.size(for: sizeMetric), in: rect, context) {
+                if labeled, let label = tileLabel(item.node.name, item.node.size(for: sizeMetric), in: rect, context) {
                     labels.append(label)
                 }
 
             case .smallerItems(let count, let total):
                 context.fill(shape, with: Self.bands(rect, (tone.bodySheen, 1), body: tone.bodyTop, tone.bodyBottom))
-                stripes.addPath(shape)
+                // The stripes go on in one pass at full opacity, so a fading block goes without.
+                if opacity == 1 { stripes.addPath(shape) }
                 // Says what it gathered, never the folder's name; on stripes, in the title color.
-                if showLabels && rect.width > 56 && rect.height > 20 {
+                if labeled && rect.width > 56 && rect.height > 20 {
                     let text = Text(verbatim: "\(count) smaller items · \(ByteFormatter.string(from: total))")
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(titleColor)
                     titles.append((context.resolve(text), rect.insetBy(dx: 6, dy: 4)))
@@ -99,7 +107,7 @@ struct TreemapRenderer {
                                                     width: min(rect.width - 14, 160), height: Self.barHeight),
                               colors: categoryColors, context)
                 }
-                if showLabels && rect.width >= 40 {
+                if labeled && rect.width >= 40 {
                     let title = Text(verbatim: "\(open ? "▾" : "▸") \(item.node.name) ").fontWeight(.semibold)
                     let detail = Text(verbatim: "· \(ByteFormatter.string(from: item.node.size(for: sizeMetric)))")
                         .foregroundStyle(titleColor.opacity(0.6))
@@ -113,6 +121,7 @@ struct TreemapRenderer {
             }
         }
 
+        if fading { context.opacity = 1 }
         if !stripes.isEmpty { drawStripes(clippedTo: stripes, dark: dark, context) }
         for (text, rect) in titles { context.draw(text, in: rect) }
         if !labels.isEmpty {

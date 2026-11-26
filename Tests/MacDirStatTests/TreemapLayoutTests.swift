@@ -277,6 +277,39 @@ private func mixedTree() -> FileNode {
             drawTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
         }
         print("BENCH path=\(path) level=\(level) items=\(items.count) layout_ms_median=\(median(layoutTimes)) draw_ms_median=\(median(drawTimes))")
+
+        // Halfway through a transition: building it, then one frame with every item it draws.
+        func timeTransition(_ name: String, from old: [TreemapItem], to new: [TreemapItem]) {
+            var transition = TreemapTransition(from: old, to: new)
+            var setupTimes: [Double] = [], frameTimes: [Double] = []
+            for _ in 0..<15 {
+                setupTimes.append(milliseconds(clock.measure { transition = TreemapTransition(from: old, to: new) }))
+                let current = transition
+                let canvas = Canvas { context, size in
+                    let frame = current.frame(at: 0.5)
+                    TreemapRenderer(items: frame.map { $0.item.moved(to: $0.rect) }, zoomScale: 1, panOffset: .zero,
+                                    showLabels: true, sizeMetric: .allocatedSize, colorMode: .type, contrast: .standard,
+                                    opacities: frame.map(\.opacity))
+                        .draw(in: &context, size: size)
+                }.frame(width: 1200, height: 800)
+                frameTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
+            }
+            print("BENCH level=\(level) \(name) frame_items=\(transition.frame(at: 0.5).count) transition_setup_ms_median=\(median(setupTimes)) transition_frame_ms_median=\(median(frameTimes))")
+        }
+
+        // Opening the largest closed folder in place.
+        if let closed = items.first(where: { $0.kind == .closedFolder }) {
+            let opened = engine.layout(root: root, in: bounds, sizeMetric: .allocatedSize, detailLevel: level,
+                                       overrides: [closed.node.id: true])
+            timeTransition("open=\(closed.node.name)", from: laidOut, to: opened)
+        }
+        // Drilling into the largest folder and back: the old layout fades while the new one grows over it.
+        if let folder = items.first(where: { $0.depth == 1 && $0.node.isDirectory })?.node {
+            let inside = engine.layout(root: folder, in: bounds, sizeMetric: .allocatedSize,
+                                       detailLevel: level, overrides: [:])
+            timeTransition("drill=\(folder.name)", from: laidOut, to: inside)
+            timeTransition("back=\(folder.name)", from: inside, to: laidOut)
+        }
     }
 }
 
