@@ -31,20 +31,28 @@ enum FileCategory: String, CaseIterable, Sendable, Identifiable {
         }
     }
 
+    /// System colors, so they follow light, dark and Increase Contrast.
     var color: Color {
         switch self {
-        case .documents: Color(red: 0.35, green: 0.60, blue: 0.95)
-        case .images: Color(red: 0.55, green: 0.85, blue: 0.40)
-        case .video: Color(red: 0.95, green: 0.45, blue: 0.35)
-        case .audio: Color(red: 0.95, green: 0.70, blue: 0.25)
-        case .code: Color(red: 0.65, green: 0.45, blue: 0.95)
-        case .archives: Color(red: 0.45, green: 0.80, blue: 0.80)
-        case .applications: Color(red: 0.95, green: 0.50, blue: 0.70)
-        case .system: Color(red: 0.60, green: 0.60, blue: 0.65)
-        case .caches: Color(red: 0.75, green: 0.55, blue: 0.40)
-        case .other: Color(red: 0.50, green: 0.50, blue: 0.55)
+        case .documents: .blue
+        case .images: .green
+        case .video: .red
+        case .audio: .orange
+        case .code: .purple
+        case .archives: .teal
+        case .applications: .pink
+        case .system: .gray
+        case .caches: .brown
+        case .other: Self.otherGray
         }
     }
+
+    /// A gray apart from System's: darker in dark mode, lighter in light mode.
+    private static let otherGray = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(srgbRed: 0.39, green: 0.39, blue: 0.40, alpha: 1)
+            : NSColor(srgbRed: 0.68, green: 0.68, blue: 0.70, alpha: 1)
+    })
 
     var sfSymbol: String {
         switch self {

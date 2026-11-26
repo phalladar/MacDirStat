@@ -251,11 +251,7 @@ private func mixedTree() -> FileNode {
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MACDIRSTAT_BENCH_PATH"] != nil))
 @MainActor func layoutBenchmark() async throws {
     let path = try #require(ProcessInfo.processInfo.environment["MACDIRSTAT_BENCH_PATH"])
-    var scanned: FileNode?
-    for await event in FileScanner(rootPath: path).scan() {
-        if case .completed(let node) = event { scanned = node }
-    }
-    let root = try #require(scanned)
+    let root = try await scan(path)
     let engine = TreemapLayoutEngine()
     let bounds = TreemapRect(x: 0, y: 0, width: 1200, height: 800)
     let clock = ContinuousClock()
@@ -278,11 +274,51 @@ private func mixedTree() -> FileNode {
         var drawTimes: [Double] = []
         for _ in 0..<5 {
             let canvas = Canvas { context, size in
-                TreemapRenderer(items: laidOut, hoveredItemID: nil, zoomScale: 1, panOffset: .zero,
-                                showLabels: true, sizeMetric: .allocatedSize).draw(in: &context, size: size)
+                TreemapRenderer(items: laidOut, zoomScale: 1, panOffset: .zero, showLabels: true,
+                                sizeMetric: .allocatedSize, colorMode: .type, contrast: .standard)
+                    .draw(in: &context, size: size)
             }.frame(width: 1200, height: 800)
             drawTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
         }
         print("BENCH path=\(path) level=\(level) items=\(items.count) layout_ms_median=\(median(layoutTimes)) draw_ms_median=\(median(drawTimes))")
     }
+}
+
+// Opt in with a folder to scan. Writes the treemap at level 3 in light and dark, by type and by
+// folder, as PNGs to MACDIRSTAT_SNAPSHOT_OUT (default: the temporary directory) for a look by eye.
+@Test(.enabled(if: ProcessInfo.processInfo.environment["MACDIRSTAT_SNAPSHOT_PATH"] != nil))
+@MainActor func treemapSnapshots() async throws {
+    let environment = ProcessInfo.processInfo.environment
+    let root = try await scan(try #require(environment["MACDIRSTAT_SNAPSHOT_PATH"]))
+    let output = URL(fileURLWithPath: environment["MACDIRSTAT_SNAPSHOT_OUT"] ?? NSTemporaryDirectory())
+    try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+    let items = TreemapLayoutEngine().layout(root: root, in: TreemapRect(x: 0, y: 0, width: 1200, height: 800),
+                                             sizeMetric: .allocatedSize, detailLevel: 3, overrides: [:])
+    for scheme in [ColorScheme.light, .dark] {
+        for mode in TreemapColorMode.allCases {
+            let canvas = Canvas { context, size in
+                TreemapRenderer(items: items, zoomScale: 1, panOffset: .zero, showLabels: true,
+                                sizeMetric: .allocatedSize, colorMode: mode, contrast: .standard)
+                    .draw(in: &context, size: size)
+            }
+            .frame(width: 1200, height: 800)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: canvas)
+            renderer.scale = 2
+            let image = try #require(renderer.cgImage)
+            let url = output.appendingPathComponent("treemap-\(scheme == .dark ? "dark" : "light")-\(mode.rawValue).png")
+            let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
+            CGImageDestinationAddImage(destination, image, nil)
+            #expect(CGImageDestinationFinalize(destination))
+        }
+    }
+}
+
+private func scan(_ path: String) async throws -> FileNode {
+    var scanned: FileNode?
+    for await event in FileScanner(rootPath: path).scan() {
+        if case .completed(let node) = event { scanned = node }
+    }
+    return try #require(scanned)
 }

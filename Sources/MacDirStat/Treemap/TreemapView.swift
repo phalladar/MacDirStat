@@ -16,6 +16,7 @@ struct TreemapView: View {
     let treeVersion: Int
     let isBusy: Bool
     @Environment(AppState.self) private var appState
+    @Environment(\.colorSchemeContrast) private var contrast
 
     @State private var items: [TreemapItem] = []
     @State private var hoveredItemID: Int?
@@ -55,7 +56,9 @@ struct TreemapView: View {
                     zoomScale: zoomScale,
                     panOffset: panOffset,
                     showLabels: showLabels,
-                    sizeMetric: sizeMetric
+                    sizeMetric: sizeMetric,
+                    colorMode: appState.colorMode,
+                    contrast: contrast
                 )
 
                 TreemapSelectionOverlay(
@@ -156,7 +159,7 @@ struct TreemapView: View {
                 recomputeLayout(size: geometry.size)
             }
         }
-        .background(.black)
+        .background(Color(nsColor: .windowBackgroundColor))
 
         TreemapStatusBar(node: hoveredNode, sizeMetric: sizeMetric)
         }
@@ -277,6 +280,8 @@ private struct TreemapBaseCanvas: View {
     let panOffset: CGPoint
     let showLabels: Bool
     let sizeMetric: SizeMetric
+    let colorMode: TreemapColorMode
+    let contrast: ColorSchemeContrast
 
     var body: some View {
         Canvas { context, size in
@@ -284,11 +289,12 @@ private struct TreemapBaseCanvas: View {
             defer { TreemapSignposts.signposter.endInterval("draw", interval) }
             let renderer = TreemapRenderer(
                 items: items,
-                hoveredItemID: nil,
                 zoomScale: zoomScale,
                 panOffset: panOffset,
                 showLabels: showLabels,
-                sizeMetric: sizeMetric
+                sizeMetric: sizeMetric,
+                colorMode: colorMode,
+                contrast: contrast
             )
             renderer.draw(in: &context, size: size)
         }

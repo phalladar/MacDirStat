@@ -108,8 +108,10 @@ struct TreemapLayoutEngine: Sendable {
             if smallerCount > 0 { sizes.append(Double(total - headTotal) * scale) }
 
             let rects = TreemapLayoutEngine.squarify(sizes: sizes, in: content)
+            let half = TreemapMetrics.gap / 2
             for (offset, laid) in rects.enumerated() {
-                let rect = TreemapRect(x: laid.x, y: laid.y,
+                // Half the gap on every side, so siblings sit one gap apart and edges match.
+                let rect = TreemapRect(x: laid.x + half, y: laid.y + half,
                                        width: max(0, laid.width - TreemapMetrics.gap),
                                        height: max(0, laid.height - TreemapMetrics.gap))
                 let itemBranch = branch ?? offset
