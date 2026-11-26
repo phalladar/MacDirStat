@@ -83,10 +83,6 @@ private func item(_ node: FileNode, in items: [TreemapItem]) -> TreemapItem? {
     items.first { $0.node === node && !$0.isSmallerItems }
 }
 
-private extension TreemapItem {
-    var isSmallerItems: Bool { if case .smallerItems = kind { true } else { false } }
-}
-
 /// root → a → b → c → file, one child each.
 private func chain(_ count: Int) -> (root: FileNode, folders: [FileNode]) {
     var spec = Spec.file(1000)

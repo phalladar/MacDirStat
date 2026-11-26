@@ -37,6 +37,19 @@ struct TreemapItem: Identifiable, Sendable {
     let kind: Kind
     /// Index of the depth-1 ancestor among the shown folder's children, for folder color mode.
     let branch: Int
+
+    var isSmallerItems: Bool {
+        if case .smallerItems = kind { true } else { false }
+    }
+
+    /// Open folders, and closed ones with room for a title, are frames with a title strip.
+    var hasTitleStrip: Bool {
+        switch kind {
+        case .openFolder: true
+        case .closedFolder: rect.width >= TreemapMetrics.titleMinimum.width && rect.height >= TreemapMetrics.titleMinimum.height
+        case .file, .smallerItems: false
+        }
+    }
 }
 
 struct TreemapLayoutEngine: Sendable {

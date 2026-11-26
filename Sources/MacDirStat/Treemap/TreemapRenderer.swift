@@ -79,8 +79,7 @@ struct TreemapRenderer {
                     titles.append((context.resolve(text), rect.insetBy(dx: 6, dy: 4)))
                 }
 
-            case .closedFolder where item.rect.width < TreemapMetrics.titleMinimum.width
-                || item.rect.height < TreemapMetrics.titleMinimum.height:
+            case .closedFolder where !item.hasTitleStrip:
                 // No room for a title: a block with a light tab on top marks it as a folder.
                 let radius = Self.radius(Self.blockRadius, rect)
                 let block = Path(roundedRect: rect, cornerRadius: radius)
@@ -178,6 +177,11 @@ struct TreemapRenderer {
         var clipped = context
         clipped.clip(to: blocks)
         clipped.stroke(lines, with: .color(dark ? .black.opacity(0.22) : .white.opacity(0.4)), lineWidth: 3)
+    }
+
+    /// The corner radius of `item` drawn at `rect`, for overlays that trace its outline.
+    static func cornerRadius(of item: TreemapItem, in rect: CGRect) -> CGFloat {
+        radius(item.hasTitleStrip ? frameRadius : blockRadius, rect)
     }
 
     /// Never rounder than a quarter of the shorter side, so small blocks keep their shape.

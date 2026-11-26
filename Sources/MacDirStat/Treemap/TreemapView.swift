@@ -15,6 +15,8 @@ struct TreemapView: View {
     let sizeMetric: SizeMetric
     let treeVersion: Int
     let isBusy: Bool
+    /// "Macintosh HD · 782 GB used · 81.9 GB free", shown in the status bar when nothing is hovered.
+    let volumeSummary: String
     @Environment(AppState.self) private var appState
     @Environment(\.colorSchemeContrast) private var contrast
 
@@ -22,6 +24,9 @@ struct TreemapView: View {
     @State private var hoveredItemID: Int?
     /// Item index by node, so the shared selection maps to its rectangle without a search.
     @State private var itemIndexByNode: [ObjectIdentifier: Int] = [:]
+    /// Each folder's smallerItems item, which itemIndexByNode leaves out since it shares the folder's node.
+    @State private var smallerItemsByFolder: [ObjectIdentifier: Int] = [:]
+    @State private var cursor = TreemapCursor()
     @State private var lastSize: CGSize = .zero
     @State private var zoomScale: CGFloat = 1.0
     @State private var panOffset: CGPoint = .zero
@@ -30,17 +35,19 @@ struct TreemapView: View {
     /// Key of this view's layout in AppState.layoutTasks.
     @State private var layoutID = UUID()
 
-    private var hoveredNode: FileNode? {
-        guard let id = hoveredItemID else { return nil }
-        return items.first { $0.id == id }?.node
+    private var hoveredItem: TreemapItem? {
+        guard let id = hoveredItemID, items.indices.contains(id) else { return nil }
+        return items[id]
     }
 
-    /// The selected node's rectangle, or its nearest ancestor's when the node itself is too
-    /// small or too deep to have been laid out.
+    /// The selected node's rectangle; the smallerItems block it was folded into; or its nearest
+    /// ancestor's, when it sits inside a closed folder. The shown folder itself has none.
     private var selectedItemID: Int? {
         var node = selectedNode
-        while let current = node {
+        while let current = node, current !== root {
             if let index = itemIndexByNode[ObjectIdentifier(current)] { return index }
+            // Only open folders lay out children, so a block in the parent means it holds this one.
+            if let parent = current.parent, let block = smallerItemsByFolder[ObjectIdentifier(parent)] { return block }
             node = current.parent
         }
         return nil
@@ -70,35 +77,31 @@ struct TreemapView: View {
 
                 // Lightweight hover overlay — redraws only the single highlight rect
                 TreemapHoverOverlay(
-                    items: items,
-                    hoveredItemID: hoveredItemID,
+                    item: hoveredItem,
                     zoomScale: zoomScale,
                     panOffset: panOffset
                 )
+
+                // Hidden with the labels while zooming or panning.
+                if showLabels, let item = hoveredItem {
+                    TreemapTooltipLayer(cursor: cursor, item: item, root: root, sizeMetric: sizeMetric)
+                }
             }
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let location):
+                    cursor.location = location
                     hoveredItemID = hitTestID(at: screenToContent(location))
                 case .ended:
                     hoveredItemID = nil
                 }
             }
-            .onTapGesture(count: 2) { location in
-                if let item = hitTestItem(at: screenToContent(location)),
-                   let target = drillDownTarget(for: item.node) {
-                    onDrillDown(target)
-                }
-            }
-            .onTapGesture(count: 1) { location in
-                if let item = hitTestItem(at: screenToContent(location)) {
-                    onSelect(item.node)
-                }
+            .onTapGesture { location in
+                click(at: location)
             }
             .contextMenu {
                 Group {
-                    if let hoveredID = hoveredItemID,
-                       let item = items.first(where: { $0.id == hoveredID }) {
+                    if let item = hoveredItem {
                         Button("Reveal in Finder", systemImage: "arrow.right.circle") {
                             FileActions.revealInFinder(item.node)
                         }
@@ -111,7 +114,8 @@ struct TreemapView: View {
                                 onDrillDown(target)
                             }
                         }
-                        if item.node.parent != nil {
+                        // A smallerItems item's node is its folder, often the shown one: not for trashing.
+                        if item.node.parent != nil, !item.isSmallerItems {
                             Divider()
                             MoveToTrashButton(node: item.node, isBusy: isBusy, action: onTrash)
                         }
@@ -161,7 +165,7 @@ struct TreemapView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
 
-        TreemapStatusBar(node: hoveredNode, sizeMetric: sizeMetric)
+        TreemapStatusBar(item: hoveredItem, volumeSummary: volumeSummary, sizeMetric: sizeMetric)
         }
         .focusedSceneValue(\.zoomInAction) {
             let center = CGPoint(x: lastSize.width / 2, y: lastSize.height / 2)
@@ -220,6 +224,35 @@ struct TreemapView: View {
         panOffset.y = min(0, max(viewSize.height - contentHeight, panOffset.y))
     }
 
+    /// Every click of a double click lands here, so a single click acts at once instead of
+    /// waiting out the double-click interval. The second click drills into what the first one
+    /// hit: opening that folder in place may have put a different item under the cursor.
+    private func click(at location: CGPoint) {
+        switch NSApp.currentEvent?.clickCount ?? 1 {
+        case 1:
+            let point = screenToContent(location)
+            // Items laid out before a trash can point at detached nodes; clicking those does nothing.
+            guard let item = hitTestItem(at: point), item.node.isInSubtree(of: root) else {
+                cursor.clickedNode = nil
+                return
+            }
+            cursor.clickedNode = item.node
+            switch item.kind {
+            case .closedFolder:
+                appState.setFolderOpen(item.node, true)
+                onSelect(item.node)
+            case .openFolder where isOnChevron(point, of: item, zoomScale: zoomScale):
+                appState.setFolderOpen(item.node, false)
+            case .openFolder, .file, .smallerItems:
+                onSelect(item.node) // a smallerItems item's node is the folder that holds them
+            }
+        case 2:
+            if let node = cursor.clickedNode, let target = drillDownTarget(for: node) { onDrillDown(target) }
+        default:
+            break
+        }
+    }
+
     private func hitTestID(at point: CGPoint) -> Int? {
         hitTestItem(at: point)?.id
     }
@@ -255,20 +288,37 @@ struct TreemapView: View {
             let newItems = engine.layout(root: root, in: bounds, sizeMetric: metric,
                                          detailLevel: level, overrides: overrides)
             TreemapSignposts.signposter.endInterval("layout", interval)
-            // A smallerItems item shares its folder's node, so the folder's own item wins.
-            var index: [ObjectIdentifier: Int] = [:]
+            // A smallerItems item shares its folder's node, so it goes in a map of its own.
+            var index: [ObjectIdentifier: Int] = [:], smaller: [ObjectIdentifier: Int] = [:]
             index.reserveCapacity(newItems.count)
             for item in newItems {
-                if case .smallerItems = item.kind { continue }
-                index[ObjectIdentifier(item.node)] = item.id
+                if case .smallerItems = item.kind {
+                    smaller[ObjectIdentifier(item.node)] = item.id
+                } else {
+                    index[ObjectIdentifier(item.node)] = item.id
+                }
             }
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 items = newItems
                 itemIndexByNode = index
+                smallerItemsByFolder = smaller
+                // The layout can move items under a still cursor, as when a click opens a folder.
+                if hoveredItemID != nil { hoveredItemID = hitTestID(at: screenToContent(cursor.location)) }
             }
         }
     }
+}
+
+/// In the title strip of a framed folder, in layout points.
+func isOnTitle(_ point: CGPoint, of item: TreemapItem) -> Bool {
+    item.hasTitleStrip && item.rect.contains(point: point) && point.y < item.rect.y + TreemapMetrics.titleHeight
+}
+
+/// On the ▾ or ▸ at the start of a folder's title strip. The glyph keeps its screen size at
+/// any zoom, so its 16 pt are screen points; `point` is in layout points.
+func isOnChevron(_ point: CGPoint, of item: TreemapItem, zoomScale: CGFloat = 1) -> Bool {
+    isOnTitle(point, of: item) && point.x < item.rect.x + 16 / zoomScale
 }
 
 /// Heavy canvas that renders all treemap items with fills, borders, labels.
@@ -304,23 +354,20 @@ private struct TreemapBaseCanvas: View {
 /// Lightweight overlay that draws only the hover highlight rectangle.
 /// Re-renders on every hover change but only paints a single translucent rect.
 private struct TreemapHoverOverlay: View {
-    let items: [TreemapItem]
-    let hoveredItemID: Int?
+    let item: TreemapItem?
     let zoomScale: CGFloat
     let panOffset: CGPoint
 
     var body: some View {
         Canvas { context, _ in
-            guard let hoveredID = hoveredItemID,
-                  let item = items.first(where: { $0.id == hoveredID }) else { return }
-
+            guard let item else { return }
             let screenRect = CGRect(
                 x: panOffset.x + item.rect.x * zoomScale,
                 y: panOffset.y + item.rect.y * zoomScale,
                 width: item.rect.width * zoomScale,
                 height: item.rect.height * zoomScale
             )
-            let path = Path(roundedRect: screenRect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1)
+            let path = Path(roundedRect: screenRect, cornerRadius: TreemapRenderer.cornerRadius(of: item, in: screenRect))
             context.fill(path, with: .color(.white.opacity(0.25)))
         }
         .allowsHitTesting(false)
@@ -334,7 +381,8 @@ private struct TreemapSelectionOverlay: View {
     let panOffset: CGPoint
 
     var body: some View {
-        Canvas { context, size in
+        // An outline only: dimming the rest would hide the frames the user is exploring.
+        Canvas { context, _ in
             guard let id = selectedItemID, items.indices.contains(id) else { return }
             let item = items[id]
             let rect = CGRect(
@@ -343,36 +391,36 @@ private struct TreemapSelectionOverlay: View {
                 width: item.rect.width * zoomScale,
                 height: item.rect.height * zoomScale
             )
-            // Item 0 is the treemap root, so there is nothing outside it to dim. A folder outside
-            // the zoomed-in view isn't dimmed around either, or the whole view would go dark.
-            if item.node.isDirectory && id != 0 && rect.intersects(CGRect(origin: .zero, size: size)) {
-                var outside = Path(CGRect(origin: .zero, size: size))
-                outside.addRect(rect)
-                context.fill(outside, with: .color(.black.opacity(0.55)), style: FillStyle(eoFill: true))
-            }
-            context.stroke(Path(rect.insetBy(dx: 1, dy: 1)), with: .color(.white), lineWidth: 2)
+            let radius = TreemapRenderer.cornerRadius(of: item, in: rect)
+            context.stroke(Path(roundedRect: rect.insetBy(dx: 1, dy: 1), cornerRadius: max(0, radius - 1)),
+                           with: .color(.white), lineWidth: 2)
         }
         .allowsHitTesting(false)
     }
 }
 
-/// Status bar showing hovered item path and size.
+/// Status bar showing the hovered item's path and size, or the scanned volume's usage.
 /// Extracted as a separate view so changes only redraw this text, not the canvases.
 private struct TreemapStatusBar: View {
-    let node: FileNode?
+    let item: TreemapItem?
+    let volumeSummary: String
     let sizeMetric: SizeMetric
 
     var body: some View {
         HStack(spacing: 0) {
-            if let node {
-                Text(node.path)
+            if let item {
+                let (label, size) = switch item.kind {
+                case .smallerItems(let count, let size): ("\(count.formatted()) smaller items in \(item.node.path)", size)
+                default: (item.node.path, item.node.size(for: sizeMetric))
+                }
+                Text(verbatim: label)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 12)
-                Text(ByteFormatter.string(from: node.size(for: sizeMetric)))
+                Text(ByteFormatter.string(from: size))
                     .monospacedDigit()
             } else {
-                Text(" ")
+                Text(verbatim: volumeSummary.isEmpty ? " " : volumeSummary)
             }
         }
         .font(.caption)

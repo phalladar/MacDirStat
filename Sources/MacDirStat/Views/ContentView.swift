@@ -3,6 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var coordinator: ScanCoordinator?
+    /// The scanned volume's usage for the status bar, read once per scan.
+    @State private var volumeSummary = ""
     @FocusedValue(\.zoomInAction) private var zoomIn
     @FocusedValue(\.zoomOutAction) private var zoomOut
     @FocusedValue(\.resetZoomAction) private var resetZoom
@@ -74,7 +76,8 @@ struct ContentView: View {
                                 },
                                 sizeMetric: appState.sizeMetric,
                                 treeVersion: appState.treeVersion,
-                                isBusy: appState.busyID != nil
+                                isBusy: appState.busyID != nil,
+                                volumeSummary: volumeSummary
                             )
                         }
                     }
@@ -106,7 +109,7 @@ struct ContentView: View {
             }
         }
         .onExitCommand {
-            // Esc selects the folder the treemap shows, which clears the selection dimming.
+            // Esc selects the folder the treemap shows, which draws no outline.
             if let root = appState.treemapRoot { appState.selectedNode = root }
         }
         .toolbar {
@@ -172,6 +175,10 @@ struct ContentView: View {
                 }
             }
         }
+        .task(id: appState.rootNode.map(ObjectIdentifier.init)) {
+            let path = appState.rootNode?.path
+            volumeSummary = await Task.detached { path.map(Self.volumeSummary) ?? "" }.value
+        }
         .onAppear {
             if coordinator == nil {
                 coordinator = ScanCoordinator(appState: appState)
@@ -180,6 +187,17 @@ struct ContentView: View {
         .focusedSceneValue(\.openFolderAction, {
             openFolder()
         })
+    }
+
+    /// "Macintosh HD · 782 GB used · 81.9 GB free" for the volume holding `path`.
+    nonisolated private static func volumeSummary(for path: String) -> String {
+        let keys: Set<URLResourceKey> = [.volumeNameKey, .volumeTotalCapacityKey,
+                                         .volumeAvailableCapacityForImportantUsageKey]
+        guard let values = try? URL(fileURLWithPath: path).resourceValues(forKeys: keys),
+              let name = values.volumeName, let total = values.volumeTotalCapacity,
+              let free = values.volumeAvailableCapacityForImportantUsage else { return "" }
+        let used = ByteFormatter.string(from: Int64(total) - free)
+        return "\(name) · \(used) used · \(ByteFormatter.string(from: free)) free"
     }
 
     private func selectAndScan() {
