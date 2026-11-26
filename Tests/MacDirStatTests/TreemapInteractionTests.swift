@@ -77,3 +77,40 @@ import Testing
     #expect(TreemapView.drillDownTarget(for: full, shown: root, sizeMetric: .allocatedSize) === full)
     #expect(TreemapView.drillDownTarget(for: file, shown: root, sizeMetric: .allocatedSize) === full)
 }
+
+@Test func accessibilityExposesFoldersBlocksAndTheLargestFiles() {
+    let library = FileNode(inode: 1, name: "Library", isDirectory: true, ownSize: 2_000_000, allocatedSize: 2_000_000)
+    let docs = FileNode(inode: 2, name: "Documents", isDirectory: true, ownSize: 3_000_000, allocatedSize: 3_000_000)
+    func item(_ id: Int, _ node: FileNode, _ kind: TreemapItem.Kind, area: Double = 100) -> TreemapItem {
+        TreemapItem(id: id, node: node, rect: TreemapRect(x: 0, y: 0, width: area, height: 1),
+                    depth: 1, kind: kind, branch: 0)
+    }
+    var items = [item(0, library, .openFolder), item(1, docs, .closedFolder),
+                 item(2, library, .smallerItems(count: 12, size: 5_000))]
+    // 201 files, ids 3…203, the largest last: the smallest one, id 3, is left out.
+    for i in 0...TreemapAccessibility.maxFiles {
+        let file = FileNode(inode: UInt64(10 + i), name: "f\(i)", isDirectory: false, ownSize: 1_000, allocatedSize: 1_000)
+        items.append(item(3 + i, file, .file, area: Double(1 + i)))
+    }
+
+    let exposed = TreemapAccessibility.items(of: items)
+    #expect(exposed.count == 3 + TreemapAccessibility.maxFiles)
+    #expect(exposed.map(\.id) == [0, 1, 2] + Array(4...203)) // drawing order kept
+
+    #expect(TreemapAccessibility.label(of: items[0], sizeMetric: .fileSize) == "Library, folder, 2 MB, open")
+    #expect(TreemapAccessibility.label(of: items[1], sizeMetric: .fileSize) == "Documents, folder, 3 MB, closed")
+    #expect(TreemapAccessibility.label(of: items[2], sizeMetric: .fileSize) == "12 smaller items, 5 KB")
+    #expect(TreemapAccessibility.label(of: items[4], sizeMetric: .fileSize) == "f1, 1 KB")
+}
+
+// Hover and transition ticks re-run the treemap's body with the same layout: the layer must
+// compare equal then, so `.equatable()` skips its body, and unequal once a new layout lands.
+@MainActor @Test func accessibilityLayerChangesOnlyWithTheLayout() {
+    let root = FileNode(inode: 1, name: "root", isDirectory: true)
+    let file = TreemapItem(id: 0, node: FileNode(inode: 2, name: "a", isDirectory: false),
+                           rect: TreemapRect(x: 0, y: 0, width: 10, height: 10), depth: 1, kind: .file, branch: 0)
+    let layer = TreemapAccessibilityLayer(generation: 4, items: [file], root: root, sizeMetric: .allocatedSize)
+    #expect(layer == TreemapAccessibilityLayer(generation: 4, items: [file, file], root: root, sizeMetric: .allocatedSize))
+    #expect(layer != TreemapAccessibilityLayer(generation: 5, items: [file], root: root, sizeMetric: .allocatedSize))
+    #expect(layer != TreemapAccessibilityLayer(generation: 4, items: [file], root: root, sizeMetric: .fileSize))
+}

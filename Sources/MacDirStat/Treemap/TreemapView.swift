@@ -38,6 +38,8 @@ struct TreemapView: View {
     /// From the previous layout to `items`, while it runs; hit testing already uses `items`.
     @State private var transition: TreemapTransition?
     @State private var transitionStart = Date()
+    /// Bumped with every new layout, so the accessibility layer rebuilds only then.
+    @State private var layoutGeneration = 0
 
     private var hoveredItem: TreemapItem? {
         guard let id = hoveredItemID, items.indices.contains(id) else { return nil }
@@ -103,6 +105,15 @@ struct TreemapView: View {
                 if showLabels, let item = hoveredItem {
                     TreemapTooltipLayer(cursor: cursor, item: item, root: root, sizeMetric: sizeMetric)
                 }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Treemap")
+            .accessibilityChildren {
+                // Zoom and pan move the whole layer, so they don't re-evaluate its elements.
+                TreemapAccessibilityLayer(generation: layoutGeneration, items: items, root: root, sizeMetric: sizeMetric)
+                    .equatable()
+                    .scaleEffect(zoomScale, anchor: .topLeading)
+                    .offset(x: panOffset.x, y: panOffset.y)
             }
             .onContinuousHover { phase in
                 switch phase {
@@ -348,6 +359,7 @@ struct TreemapView: View {
                     transition = nil
                 }
                 items = newItems
+                layoutGeneration &+= 1
                 itemIndexByNode = index
                 smallerItemsByFolder = smaller
                 // The layout can move items under a still cursor, as when a click opens a folder.
@@ -366,6 +378,74 @@ func isOnTitle(_ point: CGPoint, of item: TreemapItem) -> Bool {
 /// any zoom, so its 16 pt are screen points; `point` is in layout points.
 func isOnChevron(_ point: CGPoint, of item: TreemapItem, zoomScale: CGFloat = 1) -> Bool {
     isOnTitle(point, of: item) && point.x < item.rect.x + 16 / zoomScale
+}
+
+/// What VoiceOver reads of the treemap: every folder and smaller-items block, and only the
+/// largest files, which can number thousands without folders shown.
+enum TreemapAccessibility {
+    static let maxFiles = 200
+
+    /// The items to expose, in drawing order, so a folder's contents follow it.
+    static func items(of items: [TreemapItem]) -> [TreemapItem] {
+        let files = items.filter { $0.kind == .file }
+        guard files.count > maxFiles else { return items }
+        let dropped = Set(files.sorted { $0.rect.area > $1.rect.area }[maxFiles...].map(\.id))
+        return items.filter { !dropped.contains($0.id) }
+    }
+
+    /// "Library, folder, 266 GB, closed", "1,234 smaller items, 5 KB" or "notes.txt, 4 KB".
+    static func label(of item: TreemapItem, sizeMetric: SizeMetric) -> String {
+        let name = item.node.name, size = ByteFormatter.string(from: item.node.size(for: sizeMetric))
+        return switch item.kind {
+        case .openFolder: "\(name), folder, \(size), open"
+        case .closedFolder: "\(name), folder, \(size), closed"
+        case .smallerItems(let count, let blockSize): "\(count.formatted()) smaller items, \(ByteFormatter.string(from: blockSize))"
+        case .file: "\(name), \(size)"
+        }
+    }
+}
+
+/// The treemap's accessibility elements at zoom 1×, over the items they describe. Equal while the
+/// layout is the same, so hover and transition ticks, which re-run the treemap's body, skip it.
+struct TreemapAccessibilityLayer: View, Equatable {
+    let generation: Int
+    let items: [TreemapItem]
+    let root: FileNode
+    let sizeMetric: SizeMetric
+    @Environment(AppState.self) var appState
+
+    nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.generation == rhs.generation && lhs.sizeMetric == rhs.sizeMetric
+    }
+
+    var body: some View {
+        ZStack {
+            ForEach(TreemapAccessibility.items(of: items)) { item in
+                let node = item.node, rect = item.rect
+                Color.clear
+                    .frame(width: rect.width, height: rect.height)
+                    .position(x: rect.x + rect.width / 2, y: rect.y + rect.height / 2)
+                    .accessibilityElement()
+                    .accessibilityLabel(TreemapAccessibility.label(of: item, sizeMetric: sizeMetric))
+                    .accessibilityAction {
+                        // Like a click: a closed folder opens in place; everything selects.
+                        guard node.isInSubtree(of: root) else { return }
+                        if item.kind == .closedFolder { appState.setFolderOpen(node, true) }
+                        appState.selectedNode = node
+                    }
+                    .accessibilityActions {
+                        switch item.kind {
+                        case .closedFolder: Button("Open") { appState.setFolderOpen(node, true) }
+                        case .openFolder: Button("Close") { appState.setFolderOpen(node, false) }
+                        case .file, .smallerItems: EmptyView()
+                        }
+                        if let target = TreemapView.drillDownTarget(for: node, shown: root, sizeMetric: sizeMetric) {
+                            Button("Enter") { appState.drillDown(to: target) }
+                        }
+                    }
+            }
+        }
+    }
 }
 
 /// Heavy canvas that renders all treemap items with fills, borders, labels.

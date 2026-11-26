@@ -69,22 +69,40 @@ To uninstall, quit MacDirStat and drag it from Applications to the Trash, or run
 1. **Open MacDirStat.** The start screen lists your drives, with a bar showing how full each one is.
 2. **Pick what to scan.** Click your startup disk (usually **Macintosh HD**) to scan the whole Mac, click an external drive, or click **Choose a Custom Folder...** to scan a single folder.
 3. **Wait for the scan.** MacDirStat shows the number of files and the allocated disk space found so far. You can cancel at any time.
-4. **Look for the biggest rectangles.** They are the files using the most space. Hover over any rectangle to see its full path and size in the status bar at the bottom.
-5. **Zoom in on crowded areas** with the scroll wheel, a trackpad pinch, or the zoom buttons in the toolbar.
-6. **Drill into a folder.** Double-click any rectangle to show just the folder it's in. The breadcrumb bar above the treemap, or the **Back** button, takes you back up.
-7. **Check folder totals.** The sidebar lists folders sorted largest first. Select a folder to see its size, file count, and breakdown by file type in the inspector on the right, or click a file in the treemap to see its details.
-8. **Act on what you find.** Right-click a file or folder and choose **Move to Trash…**, or **Reveal in Finder** to look at it first. The totals update without a rescan. After changing a folder in Finder, right-click it in the sidebar and choose **Rescan Folder**, or click **Rescan** in the toolbar to scan everything again.
+4. **Look for the biggest rectangles.** Colored blocks are files; gray frames with a name and size along the top are folders. Hover over any rectangle for a card with its size, its path, and what a folder holds by file type.
+5. **Open folders in place.** The treemap starts with folders opened three levels deep. Click a closed folder to open it where it is, and click the **▾** in its title to close it. **More Detail** and **Less Detail** in the toolbar or the **View** menu (⌘+ and ⌘−) open or close one more level everywhere, and **View → Collapse All** undoes the folders you opened or closed by hand. Files and folders too small to see on their own are gathered into a striped "smaller items" block.
+6. **Drill into a folder.** Double-click a folder to show just that folder, or a file to show the folder it's in. The breadcrumb bar above the treemap, or the **Back** button, takes you back up.
+7. **Zoom in on crowded areas** with the scroll wheel or a trackpad pinch. Drag with the middle mouse button to pan, and press ⌘0 to go back to actual size.
+8. **Check folder totals.** The sidebar lists folders sorted largest first. Select a folder to see its size, file count, and breakdown by file type in the inspector on the right, or click a file in the treemap to see its details.
+9. **Act on what you find.** Right-click a file or folder and choose **Move to Trash…**, or **Reveal in Finder** to look at it first. The totals update without a rescan. After changing files in Finder, click **Rescan** in the toolbar to rescan the folder the treemap shows, or right-click a folder in the sidebar and choose **Rescan Folder**. Hold Option while clicking **Rescan** to scan everything again.
+
+### Keyboard shortcuts
+
+| Shortcut | Action |
+| --- | --- |
+| ⌘O | Open a folder to scan |
+| ⌘+ (or ⌘=) / ⌘− | More or less detail: open or close one more level of folders |
+| ⌘0 | Actual size (undo zoom) |
+| ⌘[ | Back to the parent folder |
+| ⌘R | Rescan the folder the treemap shows |
+| ⇧⌘R | Rescan everything |
+| ⌥⌘I | Show or hide the inspector |
+
+The **View** menu also has **Collapse All**, **Show Folders**, and **Color by Type** / **Color by Folder**.
 
 MacDirStat only moves items to the Trash, after you confirm, so you can restore them from there. It never deletes files permanently, and it never moves cloud-only iCloud items.
 
 ## Features
 
-- **Interactive treemap.** Every file is drawn as a rectangle sized by its disk usage, nested inside its folders, using the squarified treemap layout. Large files and folders stand out at a glance, and bigger rectangles are labeled with their name and size.
-- **Color-coded file types.** Files are colored by category: documents, images, video, audio, code, archives, applications, system, caches, and other.
+- **Interactive treemap.** Every file is drawn as a rectangle sized by its disk usage, nested inside titled folder frames, using the squarified treemap layout. Large files and folders stand out at a glance, and bigger rectangles are labeled with their name and size.
+- **Open folders in place.** Click a folder to open it inside the treemap, choose how many levels open on their own with More Detail and Less Detail, and see a folder's contents by type on its closed frame. Items too small to see are gathered into one "smaller items" block per folder.
+- **Show Folders.** Turn it off for the classic look: no frames, just every file down to the bottom, with folders still separated by a thin gap.
+- **Color by type or by folder.** By type, files are colored by category: documents, images, video, audio, code, archives, applications, system, caches, and other. By folder, everything inside each top-level folder shares that folder's color.
 - **Folder tree sidebar.** Browse the folder hierarchy, sorted largest first, with each folder's size.
 - **Inspector panel.** Shows size, allocated size, file and folder counts, last-modified date, and a bar chart of what each folder contains by file type.
-- **Drill down.** Double-click a rectangle to focus the treemap on its folder, then go back up with the breadcrumb bar or the Back button.
-- **Zoom and pan.** Zoom with the scroll wheel, a trackpad pinch, or the toolbar. Pan by dragging with the middle mouse button.
+- **Drill down.** Double-click a rectangle to focus the treemap on its folder, then go back up with the breadcrumb bar or the Back button. Opening, closing, and drilling animate, unless Reduce Motion is on.
+- **Zoom and pan.** Zoom with the scroll wheel or a trackpad pinch. Pan by dragging with the middle mouse button.
+- **VoiceOver.** The treemap's folders, smaller-items blocks, and largest files are VoiceOver elements, with actions to open, close, and enter folders.
 - **File Size or Allocated Size.** Allocated Size is the default. Switch to File Size to see logical content sizes, including online-only files.
 - **Cloud-aware scanning.** File Provider placeholders (including OneDrive, synced SharePoint libraries, iCloud Drive, and other providers using macOS dataless files) are measured without downloading their contents. Cloud-only folders are skipped and marked as incomplete.
 - **Drive overview.** The start screen shows your mounted drives with their used and available space, or you can scan any folder.
@@ -148,7 +166,7 @@ MacDirStat adds up the files it can read, which can differ from the numbers macO
 
 ### What's the difference between File Size and Allocated Size?
 
-File Size is the size of a file's contents; Allocated Size is the disk space the file actually occupies. Allocated Size can be smaller for compressed or sparse files, such as some virtual machine disk images, and is often slightly larger for small files, because disk space is allocated in whole blocks. Allocated Size is the default for the treemap, folder ordering, and category breakdown. Scan progress always shows allocated space. Switch between them with the toggle in the toolbar.
+File Size is the size of a file's contents; Allocated Size is the disk space the file actually occupies. Allocated Size can be smaller for compressed or sparse files, such as some virtual machine disk images, and is often slightly larger for small files, because disk space is allocated in whole blocks. Allocated Size is the default for the treemap, folder ordering, and category breakdown. Scan progress always shows allocated space. Switch between them with the Size menu in the toolbar.
 
 Online-only cloud files can have a large File Size and little or no Allocated Size. A logical total above your drive capacity does not mean those bytes are stored on your Mac.
 
@@ -160,7 +178,7 @@ If a parent folder of the selected scan path is cloud-only, the scan may fail wi
 
 ### What do the colors in the treemap mean?
 
-Colors show file type, based on the file extension. Rectangles get slightly darker the deeper they're nested.
+With **Color by Type**, the default, colors show file type, based on the file extension. Folders are gray frames, and a closed folder shows a thin bar of what it holds by type. With **Color by Folder**, each folder in the view gets its own color, shared by everything inside it.
 
 | Color | Category | Examples |
 | --- | --- | --- |
@@ -230,7 +248,7 @@ Sources/MacDirStat/
 ├── App/              # Entry point, AppState
 ├── Scanning/         # FileScanner (parallel POSIX traversal), ScanCoordinator, FileNode tree model
 ├── Categorization/   # FileCategory definitions, ~190 file extension mappings
-├── Treemap/          # Squarify layout engine, hit testing, Canvas renderer, zoom and pan
+├── Treemap/          # Squarify layout engine, Canvas renderer, hit testing, tooltip, transitions, zoom and pan
 ├── Views/            # ContentView, WelcomeView, ScanProgressView, DirectoryTreeView, DetailPanelView
 └── Utilities/        # ByteFormatter, FullDiskAccess, FolderPicker
 ```

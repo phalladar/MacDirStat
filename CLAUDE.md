@@ -12,7 +12,7 @@ swift run MacDirStat       # Run the app
 open Package.swift         # Open in Xcode
 ```
 
-No external dependencies. Run `swift test` for scanner, cloud metadata, and size-metric regression tests. The optional live File Provider test runs only when `MACDIRSTAT_CLOUD_TEST_PATH` is set. No linter configured; Swift 6 strict concurrency mode is enforced via `swiftLanguageMode(.v6)` in Package.swift.
+No external dependencies. Run `swift test` for scanner, cloud metadata, size-metric, treemap layout, transition and interaction regression tests. Env-gated tests run only when their variable is set: the live File Provider test (`MACDIRSTAT_CLOUD_TEST_PATH`), the treemap benchmark (`MACDIRSTAT_BENCH_PATH`: layout, offscreen draw and transition frame times at 1200×800; run with `-c release`), and treemap snapshots (`MACDIRSTAT_SNAPSHOT_PATH`, PNGs to `MACDIRSTAT_SNAPSHOT_OUT`). No linter configured; Swift 6 strict concurrency mode is enforced via `swiftLanguageMode(.v6)` in Package.swift.
 
 CI (`.github/workflows/build.yml`) runs `swift build` on a pinned `macos-26` runner for PRs and pushes to `main`. It also runs `swift test`.
 
@@ -33,8 +33,8 @@ Scan flow: User picks folder → **ScanCoordinator** launches **FileScanner** �
 - **App/** — Entry point (`MacDirStatApp`) and `AppState` central state management
 - **Scanning/** — `FileScanner` (parallel POSIX traversal with inode dedup, skips symlinks and other volumes, allocated size via blocks×512, thread-scoped materialization opt-out, cancellation propagation, explicit incomplete-folder reporting), `ScanCoordinator` (async orchestration, throttling, cancellation), `FileNode` (tree model with weak parent refs to avoid retain cycles, recursive aggregate computation)
 - **Categorization/** — `FileCategory` (10 categories with colors/SF Symbols) and `FileExtensionMap` (~190 extension→category mappings; each extension belongs to one category, keys are lowercase)
-- **Treemap/** — `TreemapLayoutEngine` in `TreemapLayout.swift` (Squarify algorithm, max 12 depth levels), `TreemapRenderer` (Canvas-based with depth-darkened category colors), `TreemapView` (hit testing; click/double-click drill-down/hover/context menu interactions), `ZoomPanOverlay` (scroll, pinch, and middle-drag zoom/pan)
-- **Views/** — `ContentView` (NavigationSplitView: sidebar tree + center treemap + inspector), `WelcomeView` (volume list with usage bars, Full Disk Access banner), `ScanProgressView`, `DirectoryTreeView` (List of DisclosureGroups whose expansion lives in AppState, so a treemap selection can expand and scroll the sidebar), `DetailPanelView` (metadata + category breakdown), `SizeSparkline` (sidebar bar: share of the parent folder, split by category)
+- **Treemap/** — `TreemapLayoutEngine` in `TreemapLayout.swift` (Squarify; emits `TreemapItem`s: files, open folders as titled frames, closed folders, and "N smaller items" blocks; folders open by `detailLevel` and size or by hand via `folderOverrides`; without `showsFolders`, every folder opens as an invisible group to depth 32 and only files and blocks are drawn), `TreemapRenderer` (Canvas; color by type or by folder branch), `TreemapView` (hit testing; click opens a closed folder in place, ▾ closes, double click drills in; hover, context menu, VoiceOver elements), `TreemapTooltip` (hover card: size, path, folder makeup), `TreemapTransition` (250 ms move/fade between layouts on open, close and navigation), `ZoomPanOverlay` (scroll, pinch, and middle-drag zoom/pan)
+- **Views/** — `ContentView` (NavigationSplitView: sidebar tree + center treemap + inspector), `WelcomeView` (volume list with usage bars, Full Disk Access banner), `ScanProgressView`, `DirectoryTreeView` (List of DisclosureGroups whose expansion lives in AppState, so treemap navigation can expand and scroll the sidebar), `DetailPanelView` (metadata + category breakdown), `SizeSparkline` (sidebar bar: share of the parent folder, split by category)
 - **Utilities/** — `ByteFormatter` (human-readable sizes), `FolderPicker` (shared NSOpenPanel), `FullDiskAccess` (permission probe and System Settings link), `FileActions` (Reveal in Finder and Copy Path for the inspector, sidebar and treemap menus)
 
 ### Key Patterns
@@ -42,8 +42,9 @@ Scan flow: User picks folder → **ScanCoordinator** launches **FileScanner** �
 - All data types crossing async boundaries are `Sendable`
 - FileNode uses weak parent references to break retain cycles
 - FileScanner deduplicates hard links and firmlinks by tracking seen inodes
-- Menu commands reach the frontmost window through `focusedSceneValue` actions (see `OpenFolderCommands` and the zoom commands), not notifications
+- Menu commands never use notifications. `TreemapCommands` (View menu) calls the shared `AppState` directly for detail, color, Show Folders, Back and the inspector; only per-window actions (Open Folder, Actual Size, Rescan) reach the frontmost window through `focusedSceneValue`
+- The sidebar expands to a folder only on navigation (drill down, breadcrumb, Back, or a sidebar pick outside the shown folder); selecting or opening in the treemap leaves it alone
 - Local SwiftPM builds record SDK 15.0 while CI links the macOS 26 SDK, which changes AppKit/SwiftUI behavior; test release builds from CI (or stamp a local build with `vtool -set-build-version`) before trusting a local result
 - TreemapView uses Canvas for rendering (not individual SwiftUI views) for performance
-- Toggle the inspector without animation (`withTransaction(\.disablesAnimations, true)`): on macOS 27, animating `.inspector` while the treemap has a `.contextMenu` loops AppKit's constraint pass until it throws. Any new menu command or shortcut that shows or hides the inspector must do the same
+- Toggle the inspector without animation (`withTransaction(\.disablesAnimations, true)`): on macOS 27, animating `.inspector` while the treemap has a `.contextMenu` loops AppKit's constraint pass until it throws. `AppState.toggleInspector()` does this; any new control that shows or hides the inspector must call it
 - macOS APIs used: `NSWorkspace` (Reveal in Finder), `NSPasteboard` (clipboard), `NSOpenPanel` (folder picker)
