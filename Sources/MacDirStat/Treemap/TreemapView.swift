@@ -92,10 +92,11 @@ struct TreemapView: View {
                     baseCanvas(items: items, opacities: nil)
                 }
 
-                // Both overlays trace `items`, where the transition ends; they wait for it.
+                // Both overlays trace `items`, where the transition ends. The selection waits there,
+                // so a folder's dim stays on while it opens; the hover comes back once it lands.
                 TreemapSelectionOverlay(
                     items: items,
-                    selection: transition == nil ? selection : nil,
+                    selection: selection,
                     zoomScale: zoomScale,
                     panOffset: panOffset
                 )
@@ -281,12 +282,13 @@ struct TreemapView: View {
             }
             cursor.clickedNode = item.node
             switch item.kind {
-            case .closedFolder:
+            // Only where the layout would open it (room, something inside); elsewhere it just selects.
+            case .closedFolder where item.rect.fits(TreemapMetrics.openByHand) && drillDownTarget(for: item.node) != nil:
                 appState.setFolderOpen(item.node, true)
                 onSelect(item.node)
             case .openFolder where isOnChevron(point, of: item, zoomScale: zoomScale):
                 appState.setFolderOpen(item.node, false)
-            case .openFolder, .group, .file, .smallerItems:
+            case .closedFolder, .openFolder, .group, .file, .smallerItems:
                 onSelect(item.node) // a smallerItems item's node is the folder that holds them
             }
         case 2:

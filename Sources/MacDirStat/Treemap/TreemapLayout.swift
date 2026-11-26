@@ -9,6 +9,8 @@ struct TreemapRect: Sendable {
     var area: Double { width * height }
     var minSide: Double { min(width, height) }
 
+    func fits(_ size: CGSize) -> Bool { width >= size.width && height >= size.height }
+
     func contains(point: CGPoint) -> Bool {
         point.x >= x && point.x <= x + width &&
         point.y >= y && point.y <= y + height
@@ -50,7 +52,7 @@ struct TreemapItem: Identifiable, Sendable {
     var hasTitleStrip: Bool {
         switch kind {
         case .openFolder: true
-        case .closedFolder: rect.width >= TreemapMetrics.titleMinimum.width && rect.height >= TreemapMetrics.titleMinimum.height
+        case .closedFolder: rect.fits(TreemapMetrics.titleMinimum)
         case .file, .group, .smallerItems: false
         }
     }
@@ -177,7 +179,7 @@ struct TreemapLayoutEngine: Sendable {
             guard showsFolders else { return true }
             let (opens, minimum) = overrides[folder.id].map { ($0, TreemapMetrics.openByHand) }
                 ?? (depth < detailLevel, TreemapMetrics.openByLevel)
-            return opens && rect.width >= minimum.width && rect.height >= minimum.height
+            return opens && rect.fits(minimum)
         }
 
         private mutating func append(_ node: FileNode, _ rect: TreemapRect, _ depth: Int,
