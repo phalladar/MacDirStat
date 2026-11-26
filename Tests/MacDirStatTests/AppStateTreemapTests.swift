@@ -34,10 +34,12 @@ struct AppStateTreemapTests {
         #expect(t.state.expandedIDs.isEmpty)
     }
 
-    @Test func drillDownRevealsInSidebar() {
+    @Test func drillDownRevealsAndOpensTheFolderInSidebar() {
         let t = Tree()
         t.state.drillDown(to: t.b)
-        #expect(t.state.expandedIDs == [t.a.id])
+        #expect(t.state.expandedIDs == [t.a.id, t.b.id])
+        t.state.navigateUp()
+        #expect(t.state.expandedIDs.contains(t.b.id))
     }
 
     @Test func detailClampsToRange() {
@@ -88,6 +90,13 @@ struct AppStateTreemapTests {
         t.state.selectFromTree(t.d)
         #expect(t.state.treemapRoot === t.c)
         #expect(t.state.expandedIDs.contains(t.c.id))
+    }
+
+    @Test func pickingAFolderInsideTheShownOneRevealsIt() {
+        let t = Tree()
+        t.state.selectFromTree(t.b)
+        #expect(t.state.treemapRoot === t.root)
+        #expect(t.state.expandedIDs == [t.a.id])
     }
 
     @Test func treeControlsNeedATreeOnScreen() {

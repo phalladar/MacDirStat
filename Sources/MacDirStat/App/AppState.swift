@@ -72,8 +72,8 @@ final class AppState {
         return node.isDirectory ? node : node.parent
     }
 
-    /// Selection made in the sidebar. The treemap keeps its zoom unless the folder is outside
-    /// the folder it shows; then it moves to the folder's parent.
+    /// Selection made in the sidebar or the skipped-folders list. The treemap keeps its zoom unless
+    /// the folder is outside the folder it shows; then it moves to the folder's parent.
     func selectFromTree(_ node: FileNode) {
         selectedNode = node
         if let current = treemapRoot, !node.isInSubtree(of: current) {
@@ -81,8 +81,8 @@ final class AppState {
                 treemapRoot = node.parent ?? rootNode
                 rebuildBreadcrumbs()
             }
-            revealInTree(node)
         }
+        revealInTree(node)
     }
 
     // Any write to an @Observable property notifies observers, even when nothing changes.
@@ -189,6 +189,8 @@ final class AppState {
             rebuildBreadcrumbs()
         }
         revealInTree(node)
+        // The treemap now shows this folder's children, so the sidebar opens it too.
+        if !expandedIDs.contains(node.id) { expandedIDs.insert(node.id) }
     }
 
     func navigateTo(breadcrumb node: FileNode) {
