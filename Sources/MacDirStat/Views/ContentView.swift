@@ -52,7 +52,7 @@ struct ContentView: View {
                                 }
                             )
 
-                            if let root = appState.rootNode,
+                            if let root = appState.rootNode, !appState.isIncompleteBannerDismissed,
                                root.unscannedDirectoryCount > 0 || root.totalUnavailableEntryCount > 0 {
                                 IncompleteScanBanner(root: root) {
                                     coordinator?.startScan(path: root.path)
