@@ -131,7 +131,7 @@ private struct SkippedFoldersList: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(relativePath(folder))
                     .lineLimit(1)
-                    .truncationMode(.head)
+                    .truncationMode(.middle)
                 if let detail {
                     Text(detail).font(.caption).foregroundStyle(.secondary)
                 }

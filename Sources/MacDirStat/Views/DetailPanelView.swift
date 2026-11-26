@@ -25,21 +25,42 @@ struct DetailPanelView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            .truncationMode(.head)
+                            .truncationMode(.middle)
                     }
                 }
 
                 Divider()
 
-                // Size info
-                LabeledContent("File Size", value: ByteFormatter.string(from: node.totalSize))
-                LabeledContent("Allocated", value: ByteFormatter.string(from: node.totalAllocatedSize))
+                // The size by the chosen metric, the other one under it, then when it changed.
+                VStack(alignment: .leading, spacing: 2) {
+                    let file = ByteFormatter.string(from: node.totalSize)
+                    let allocated = ByteFormatter.string(from: node.totalAllocatedSize)
+                    Text(sizeMetric == .allocatedSize ? allocated : file)
+                        .font(.system(size: 26, weight: .semibold))
+                        .monospacedDigit()
+                    Group {
+                        Text(sizeMetric == .allocatedSize ? "On disk · \(file) file size" : "File size · \(allocated) on disk")
+                        if let date = node.modificationDate {
+                            Text("Modified \(date.formatted(date: .abbreviated, time: .shortened))")
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
 
                 if node.isDirectory {
-                    LabeledContent("Files", value: "\(node.fileCount.formatted())")
-                    let files = node.children.lazy.filter { !$0.isDirectory }
-                    LabeledContent("Files directly inside", value: "\(files.count.formatted()) · \(ByteFormatter.string(from: files.reduce(0) { $0 + $1.size(for: sizeMetric) }))")
-                    LabeledContent("Directories", value: "\(node.directoryCount.formatted())")
+                    VStack(alignment: .leading, spacing: 6) {
+                        sectionHeader("Contents")
+                        row("Files", node.fileCount.formatted())
+                        row("Folders", node.directoryCount.formatted())
+                        let files = node.children.lazy.filter { !$0.isDirectory }
+                        row("Directly inside", "\(files.count.formatted()) · \(ByteFormatter.string(from: files.reduce(0) { $0 + $1.size(for: sizeMetric) }))")
+                        if node.cloudOnlyFileCount > 0 {
+                            row("Cloud-only", node.cloudOnlyFileCount.formatted())
+                        }
+                    }
+                } else if node.cloudOnlyFileCount > 0 {
+                    row("Cloud-only files", node.cloudOnlyFileCount.formatted())
                 }
 
                 if node.isDataless {
@@ -47,35 +68,26 @@ struct DetailPanelView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if node.cloudOnlyFileCount > 0 {
-                    LabeledContent("Cloud-only files", value: node.cloudOnlyFileCount.formatted())
-                }
                 if let issue = node.scanIssue {
                     Text(issue.message).font(.caption).foregroundStyle(.orange)
                 }
                 if node.unscannedDirectoryCount > 0 || node.totalUnavailableEntryCount > 0 {
-                    Label("Incomplete scan", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
-                    Text("\(node.unscannedDirectoryCount.formatted()) folders and \(node.totalUnavailableEntryCount.formatted()) entries could not be fully scanned. Sizes leave them out; the banner above the treemap lists them by cause.")
-                        .font(.caption)
-                }
-
-                if let date = node.modificationDate {
-                    LabeledContent("Modified", value: date.formatted(date: .abbreviated, time: .shortened))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Label("Incomplete scan", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                        Text("\(node.unscannedDirectoryCount.formatted()) folders and \(node.totalUnavailableEntryCount.formatted()) entries could not be fully scanned. Sizes leave them out; the banner above the treemap lists them by cause.")
+                            .font(.caption)
+                    }
                 }
 
                 if node.isDirectory {
-                    Divider()
+                    VStack(alignment: .leading, spacing: 6) {
+                        sectionHeader("Category Breakdown")
 
-                    // Category breakdown
-                    Text("Category Breakdown")
-                        .font(.headline)
+                        let breakdown = node.categoryBreakdown(metric: sizeMetric)
+                        let total = max(1, breakdown.reduce(0) { $0 + $1.size })
 
-                    let breakdown = node.categoryBreakdown(metric: sizeMetric)
-                    let total = max(1, breakdown.reduce(0) { $0 + $1.size })
-
-                    // Bar chart
-                    VStack(spacing: 2) {
+                        // Bar chart
                         GeometryReader { geo in
                             HStack(spacing: 1) {
                                 ForEach(breakdown, id: \.category) { item in
@@ -90,27 +102,26 @@ struct DetailPanelView: View {
                         }
                         .frame(height: 20)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
-                    }
+                        .padding(.bottom, 2)
 
-                    // Legend
-                    ForEach(breakdown, id: \.category) { item in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(item.category.color)
-                                .frame(width: 10, height: 10)
-                            Image(systemName: item.category.sfSymbol)
-                                .frame(width: 16)
-                                .foregroundStyle(.secondary)
-                            Text(item.category.displayName)
-                            Spacer()
-                            Text(ByteFormatter.string(from: item.size))
-                                .foregroundStyle(.secondary)
+                        // Legend
+                        ForEach(breakdown, id: \.category) { item in
+                            HStack(spacing: 8) {
+                                Circle()
+                                    .fill(item.category.color)
+                                    .frame(width: 10, height: 10)
+                                Image(systemName: item.category.sfSymbol)
+                                    .frame(width: 16)
+                                    .foregroundStyle(.secondary)
+                                Text(item.category.displayName)
+                                Spacer()
+                                Text(ByteFormatter.string(from: item.size))
+                                    .monospacedDigit()
+                            }
+                            .font(.callout)
                         }
-                        .font(.caption)
                     }
                 }
-
-                Divider()
 
                 // Actions
                 Button {
@@ -134,5 +145,20 @@ struct DetailPanelView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+    }
+
+    /// Small and secondary, as in Finder's Get Info and Xcode's inspectors.
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
+    }
+
+    /// A label in secondary and its value at the trailing edge.
+    private func row(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            Text(value).monospacedDigit()
+        }
+        .font(.callout)
     }
 }

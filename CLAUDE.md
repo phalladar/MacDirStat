@@ -46,5 +46,4 @@ Scan flow: User picks folder â†’ **ScanCoordinator** launches **FileScanner** â†
 - The sidebar expands to a folder only on navigation (drill down, breadcrumb, Back, or a sidebar pick outside the shown folder); selecting or opening in the treemap leaves it alone
 - Local SwiftPM builds record SDK 15.0 while CI links the macOS 26 SDK, which changes AppKit/SwiftUI behavior; test release builds from CI (or stamp a local build with `vtool -set-build-version`) before trusting a local result
 - TreemapView uses Canvas for rendering (not individual SwiftUI views) for performance
-- Toggle the inspector without animation (`withTransaction(\.disablesAnimations, true)`): on macOS 27, animating `.inspector` while the treemap has a `.contextMenu` loops AppKit's constraint pass until it throws. `AppState.toggleInspector()` does this; any new control that shows or hides the inspector must call it
 - macOS APIs used: `NSWorkspace` (Reveal in Finder), `NSPasteboard` (clipboard), `NSOpenPanel` (folder picker)

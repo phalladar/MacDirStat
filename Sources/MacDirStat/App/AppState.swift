@@ -102,11 +102,7 @@ final class AppState {
 
     func lessDetail() { detailLevel = max(detailLevel - 1, Self.detailRange.lowerBound) }
 
-    func toggleInspector() {
-        // On macOS 27, animating the inspector beside the treemap's .contextMenu
-        // loops AppKit's constraint pass until it throws. Toggle without animation.
-        withTransaction(\.disablesAnimations, true) { showInspector.toggle() }
-    }
+    func toggleInspector() { showInspector.toggle() }
 
     func setExpanded(_ node: FileNode, _ expanded: Bool) {
         if expanded {
