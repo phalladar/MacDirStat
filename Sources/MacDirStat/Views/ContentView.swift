@@ -26,7 +26,10 @@ struct ContentView: View {
             ZStack {
                 switch appState.scanStatus {
                 case .idle:
-                    WelcomeView { path in
+                    WelcomeView(
+                        returnName: appState.rootNode.map { URL(fileURLWithPath: $0.path).lastPathComponent },
+                        onReturn: showTreemap
+                    ) { path in
                         coordinator?.startScan(path: path)
                     }
                     .transition(.opacity)
@@ -106,8 +109,12 @@ struct ContentView: View {
             }
         }
         .onExitCommand {
-            // Esc selects the folder the treemap shows, which clears the selection dimming.
-            if let root = appState.treemapRoot { appState.selectedNode = root }
+            if isWelcomeOverData {
+                showTreemap()
+            } else if let root = appState.treemapRoot {
+                // Esc selects the folder the treemap shows, which clears the selection dimming.
+                appState.selectedNode = root
+            }
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -163,9 +170,9 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .navigation) {
-                if appState.treemapRoot?.parent != nil {
+                if isWelcomeOverData || appState.treemapRoot?.parent != nil {
                     Button {
-                        appState.navigateUp()
+                        if isWelcomeOverData { showTreemap() } else { appState.navigateUp() }
                     } label: {
                         Label("Back", systemImage: "chevron.left")
                     }
@@ -180,6 +187,15 @@ struct ContentView: View {
         .focusedSceneValue(\.openFolderAction, {
             openFolder()
         })
+    }
+
+    /// The welcome screen is showing while a scanned tree is still loaded.
+    private var isWelcomeOverData: Bool {
+        appState.scanStatus == .idle && appState.rootNode != nil
+    }
+
+    private func showTreemap() {
+        appState.scanStatus = .completed
     }
 
     private func selectAndScan() {
