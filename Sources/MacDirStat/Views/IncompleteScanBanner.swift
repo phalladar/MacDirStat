@@ -46,6 +46,15 @@ struct IncompleteScanBanner: View {
             }
             .controlSize(.small)
             .fixedSize()
+
+            Button {
+                appState.isIncompleteBannerDismissed = true
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Dismiss")
+            .help("Dismiss")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

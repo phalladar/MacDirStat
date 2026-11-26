@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct DetailPanelView: View {
+    @Environment(AppState.self) private var appState
     let node: FileNode
     let sizeMetric: SizeMetric
     /// Totals change in place (see AppState.replace); a new value redraws the panel.
@@ -56,6 +57,11 @@ struct DetailPanelView: View {
                 if node.unscannedDirectoryCount > 0 || node.totalUnavailableEntryCount > 0 {
                     Label("Incomplete scan", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
+                    if appState.isIncompleteBannerDismissed {
+                        Button("Show Banner") { appState.isIncompleteBannerDismissed = false }
+                            .buttonStyle(.link)
+                            .controlSize(.small)
+                    }
                     Text("\(node.unscannedDirectoryCount.formatted()) folders and \(node.totalUnavailableEntryCount.formatted()) entries could not be fully scanned. Sizes leave them out; the banner above the treemap lists them by cause.")
                         .font(.caption)
                 }

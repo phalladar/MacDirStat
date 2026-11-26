@@ -45,6 +45,9 @@ final class AppState {
     @ObservationIgnored var layoutTasks: [UUID: Task<Void, Never>] = [:]
     /// Folders the last scan skipped or read only partly, largest problem areas first.
     private(set) var skippedFolders: [FileNode] = []
+    /// Set when the incomplete-scan banner is dismissed. A new scan or a rescan clears it;
+    /// trashing an item does not (replace clears it only when given a rescanned node).
+    var isIncompleteBannerDismissed = false
 
     var isScanning: Bool {
         if case .scanning = scanStatus { return true }
@@ -135,6 +138,7 @@ final class AppState {
         }
         // The list held nodes from the old subtree; the walk is pruned to affected branches.
         skippedFolders = Self.collectSkippedFolders(in: root)
+        if new != nil { isIncompleteBannerDismissed = false }
         let replacement = new ?? parent
         if selectedNode?.isInSubtree(of: old) == true { selectedNode = replacement }
         if treemapRoot?.isInSubtree(of: old) == true {
@@ -173,6 +177,7 @@ final class AppState {
 
     func setScanCompleted(root: FileNode) {
         rootNode = root
+        isIncompleteBannerDismissed = false
         treemapRoot = root
         selectedNode = root
         skippedFolders = Self.collectSkippedFolders(in: root)
