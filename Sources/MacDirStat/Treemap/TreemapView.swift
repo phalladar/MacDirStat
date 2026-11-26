@@ -1,4 +1,10 @@
+import OSLog
 import SwiftUI
+
+/// Points of Interest intervals for Instruments: "layout" and "draw".
+enum TreemapSignposts {
+    static let signposter = OSSignposter(subsystem: "MacDirStat", category: .pointsOfInterest)
+}
 
 struct TreemapView: View {
     let root: FileNode
@@ -234,7 +240,9 @@ struct TreemapView: View {
             guard !Task.isCancelled else { return }
             let engine = TreemapLayoutEngine()
             let bounds = TreemapRect(x: 0, y: 0, width: Double(size.width), height: Double(size.height))
+            let interval = TreemapSignposts.signposter.beginInterval("layout")
             let newItems = engine.layout(root: root, in: bounds, sizeMetric: metric)
+            TreemapSignposts.signposter.endInterval("layout", interval)
             let index = Dictionary(uniqueKeysWithValues: newItems.enumerated().map { (ObjectIdentifier($1.node), $0) })
             guard !Task.isCancelled else { return }
             await MainActor.run {
@@ -257,6 +265,8 @@ private struct TreemapBaseCanvas: View {
 
     var body: some View {
         Canvas { context, size in
+            let interval = TreemapSignposts.signposter.beginInterval("draw")
+            defer { TreemapSignposts.signposter.endInterval("draw", interval) }
             let renderer = TreemapRenderer(
                 items: items,
                 hoveredItemID: nil,

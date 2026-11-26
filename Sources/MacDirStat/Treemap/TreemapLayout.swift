@@ -112,7 +112,7 @@ struct TreemapLayoutEngine: Sendable {
         }
     }
 
-    private func squarify(sizes: [Double], in bounds: TreemapRect) -> [TreemapRect] {
+    func squarify(sizes: [Double], in bounds: TreemapRect) -> [TreemapRect] {
         guard !sizes.isEmpty else { return [] }
 
         var rects = [TreemapRect](repeating: TreemapRect(x: 0, y: 0, width: 0, height: 0), count: sizes.count)
@@ -122,25 +122,32 @@ struct TreemapLayoutEngine: Sendable {
         while index < sizes.count {
             let shortSide = remaining.minSide
 
-            // Find the optimal row
-            var row: [Int] = [index]
+            // Grow the row while the worst aspect ratio keeps improving; O(1) per candidate.
+            let s2 = shortSide * shortSide
+            func worst(sum: Double, lo: Double, hi: Double) -> Double {
+                guard s2 > 0 && sum > 0 else { return .infinity }
+                return max(s2 * hi / (sum * sum), sum * sum / (s2 * lo))
+            }
             var rowSum = sizes[index]
-            var bestWorst = worstAspectRatio(row: [sizes[index]], totalArea: rowSum, shortSide: shortSide)
+            var lo = rowSum, hi = rowSum
+            var bestWorst = worst(sum: rowSum, lo: lo, hi: hi)
 
             var next = index + 1
             while next < sizes.count {
-                let newSum = rowSum + sizes[next]
-                var rowSizes = row.map { sizes[$0] }
-                rowSizes.append(sizes[next])
-                let newWorst = worstAspectRatio(row: rowSizes, totalArea: newSum, shortSide: shortSide)
+                let size = sizes[next]
+                let newSum = rowSum + size
+                let newLo = min(lo, size), newHi = max(hi, size)
+                let newWorst = worst(sum: newSum, lo: newLo, hi: newHi)
                 if newWorst > bestWorst {
                     break
                 }
                 bestWorst = newWorst
-                row.append(next)
                 rowSum = newSum
+                lo = newLo
+                hi = newHi
                 next += 1
             }
+            let row = index..<next
 
             // Lay out the row
             let rowFraction = rowSum / (remaining.width * remaining.height)
@@ -190,20 +197,5 @@ struct TreemapLayoutEngine: Sendable {
         }
 
         return rects
-    }
-
-    private func worstAspectRatio(row: [Double], totalArea: Double, shortSide: Double) -> Double {
-        guard shortSide > 0 && totalArea > 0 else { return Double.infinity }
-        let s2 = shortSide * shortSide
-        var worst: Double = 0
-        for size in row {
-            guard size > 0 else { continue }
-            let ratio = max(
-                (s2 * size) / (totalArea * totalArea),
-                (totalArea * totalArea) / (s2 * size)
-            )
-            worst = max(worst, ratio)
-        }
-        return worst
     }
 }
