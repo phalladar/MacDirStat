@@ -18,6 +18,10 @@ enum ScanStatus: Equatable {
     }
 }
 
+enum TreemapColorMode: String, CaseIterable, Sendable {
+    case type, folder
+}
+
 enum SizeMetric: String, CaseIterable, Sendable {
     case fileSize = "File Size"
     case allocatedSize = "Allocated Size"
@@ -29,12 +33,16 @@ final class AppState {
     var scanStatus: ScanStatus = .idle
     var rootNode: FileNode?
     var treemapRoot: FileNode?
-    var selectedNode: FileNode? {
-        didSet { if let selectedNode { revealInTree(selectedNode) } }
-    }
+    var selectedNode: FileNode?
     var breadcrumbs: [FileNode] = []
     var sizeMetric: SizeMetric = .allocatedSize
     var showInspector: Bool = true
+    /// How many folder levels the treemap opens on its own.
+    var detailLevel = 3
+    static let detailRange = 1...8
+    var colorMode: TreemapColorMode = .type
+    /// Folders the user opened or closed by hand in the treemap, by inode. Wins over the detail level.
+    private(set) var folderOverrides: [UInt64: Bool] = [:]
     private(set) var expandedIDs: Set<UInt64> = []
     /// Bumped when part of the tree is replaced in place, so views showing its totals refresh.
     private(set) var treeVersion = 0
@@ -69,8 +77,20 @@ final class AppState {
                 treemapRoot = node.parent ?? rootNode
                 rebuildBreadcrumbs()
             }
+            revealInTree(node)
         }
     }
+
+    // Any write to an @Observable property notifies observers, even when nothing changes.
+    func setFolderOpen(_ node: FileNode, _ open: Bool) {
+        if folderOverrides[node.id] != open { folderOverrides[node.id] = open }
+    }
+
+    func collapseAll() { if !folderOverrides.isEmpty { folderOverrides = [:] } }
+
+    func moreDetail() { detailLevel = min(detailLevel + 1, Self.detailRange.upperBound) }
+
+    func lessDetail() { detailLevel = max(detailLevel - 1, Self.detailRange.lowerBound) }
 
     func setExpanded(_ node: FileNode, _ expanded: Bool) {
         if expanded {
@@ -152,6 +172,7 @@ final class AppState {
             selectedNode = node
             rebuildBreadcrumbs()
         }
+        revealInTree(node)
     }
 
     func navigateTo(breadcrumb node: FileNode) {
@@ -160,6 +181,7 @@ final class AppState {
             selectedNode = node
             rebuildBreadcrumbs()
         }
+        revealInTree(node)
     }
 
     func navigateUp() {
@@ -169,12 +191,14 @@ final class AppState {
             selectedNode = parent
             rebuildBreadcrumbs()
         }
+        revealInTree(parent)
     }
 
     func setScanCompleted(root: FileNode) {
         rootNode = root
         treemapRoot = root
         selectedNode = root
+        folderOverrides = [:]
         skippedFolders = Self.collectSkippedFolders(in: root)
         scanStatus = .completed
         rebuildBreadcrumbs()
@@ -187,6 +211,7 @@ final class AppState {
         selectedNode = nil
         breadcrumbs = []
         expandedIDs = []
+        folderOverrides = [:]
         skippedFolders = []
     }
 

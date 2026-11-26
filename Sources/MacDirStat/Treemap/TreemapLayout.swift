@@ -15,104 +15,140 @@ struct TreemapRect: Sendable {
     }
 }
 
+/// Layout sizes in points at zoom 1×.
+enum TreemapMetrics {
+    static let titleHeight = 18.0, gap = 1.0, padding = 2.0
+    static let openByLevel = CGSize(width: 110, height: 70)
+    static let openByHand = CGSize(width: 46, height: 40)
+    static let titleMinimum = CGSize(width: 60, height: 36)
+    static let smallerItemsArea = 144.0, maxDepth = 32
+}
+
 struct TreemapItem: Identifiable, Sendable {
+    enum Kind: Sendable, Equatable {
+        case file, openFolder, closedFolder, smallerItems(count: Int, size: Int64)
+    }
+
     let id: Int
+    /// For smallerItems, the folder that holds them.
     let node: FileNode
     let rect: TreemapRect
     let depth: Int
-    let color: CGColor
+    let kind: Kind
+    /// Index of the depth-1 ancestor among the shown folder's children, for folder color mode.
+    let branch: Int
 }
 
 struct TreemapLayoutEngine: Sendable {
-    let maxDepth: Int
-    let minPixelArea: Double
-
-    init(maxDepth: Int = 12, minPixelArea: Double = 4) {
-        self.maxDepth = maxDepth
-        self.minPixelArea = minPixelArea
+    /// Lays out root's children, which have depth 1; root itself is not emitted. Parents come
+    /// before their children, so the last item containing a point is the deepest one.
+    func layout(root: FileNode, in bounds: TreemapRect, sizeMetric: SizeMetric,
+                detailLevel: Int, overrides: [UInt64: Bool]) -> [TreemapItem] {
+        guard bounds.width > 0, bounds.height > 0 else { return [] }
+        var pass = LayoutPass(metric: sizeMetric, detailLevel: detailLevel, overrides: overrides)
+        let (children, total) = pass.childrenBySize(root)
+        pass.place(children, total: total, of: root, in: bounds, depth: 1, branch: nil)
+        return pass.items
     }
 
-    func layout(root: FileNode, in bounds: TreemapRect, sizeMetric: SizeMetric = .allocatedSize) -> [TreemapItem] {
+    private struct LayoutPass {
+        let metric: SizeMetric
+        let detailLevel: Int
+        let overrides: [UInt64: Bool]
         var items: [TreemapItem] = []
-        items.reserveCapacity(8192)
-        var nextID = 0
-        layoutNode(root, in: bounds, depth: 0, sizeMetric: sizeMetric, items: &items, nextID: &nextID)
-        return items
-    }
 
-    private func colorForNode(_ node: FileNode, depth: Int) -> CGColor {
-        let darkenFactor = max(0.5, 1.0 - Double(depth) * 0.08)
-        let baseColor = node.category.color.resolve(in: .init())
-        return CGColor(
-            red: Double(baseColor.red) * darkenFactor,
-            green: Double(baseColor.green) * darkenFactor,
-            blue: Double(baseColor.blue) * darkenFactor,
-            alpha: 1.0
-        )
-    }
-
-    private func layoutNode(
-        _ node: FileNode,
-        in bounds: TreemapRect,
-        depth: Int,
-        sizeMetric: SizeMetric,
-        items: inout [TreemapItem],
-        nextID: inout Int
-    ) {
-        guard bounds.area >= minPixelArea, !Task.isCancelled else { return }
-
-        // Leaf node (file or empty/childless directory)
-        if !node.isDirectory || node.children.isEmpty || depth >= maxDepth {
-            let itemID = nextID; nextID += 1
-            items.append(TreemapItem(
-                id: itemID,
-                node: node,
-                rect: bounds,
-                depth: depth,
-                color: colorForNode(node, depth: depth)
-            ))
-            return
+        init(metric: SizeMetric, detailLevel: Int, overrides: [UInt64: Bool]) {
+            self.metric = metric
+            self.detailLevel = detailLevel
+            self.overrides = overrides
+            items.reserveCapacity(4096)
         }
 
-        // Filter children with positive size
-        let children = node.children.filter { $0.size(for: sizeMetric) > 0 }
-            .sorted { $0.size(for: sizeMetric) > $1.size(for: sizeMetric) }
-        guard !children.isEmpty else {
-            let itemID = nextID; nextID += 1
-            items.append(TreemapItem(
-                id: itemID,
-                node: node,
-                rect: bounds,
-                depth: depth,
-                color: colorForNode(node, depth: depth)
-            ))
-            return
+        /// Children with a size, largest first, and their total. Scans leave them sorted by
+        /// allocated size, so this is usually a slice of the children with no copy.
+        func childrenBySize(_ folder: FileNode) -> (children: ArraySlice<FileNode>, total: Int64) {
+            let children = folder.children
+            var previous = Int64.max
+            var positive = 0
+            var total: Int64 = 0
+            for child in children {
+                let size = child.size(for: metric)
+                if size > previous {
+                    let sorted = children.filter { $0.size(for: metric) > 0 }
+                        .sorted { $0.size(for: metric) > $1.size(for: metric) }
+                    return (ArraySlice(sorted), sorted.reduce(0) { $0 + $1.size(for: metric) })
+                }
+                if size > 0 { positive += 1 }
+                total += size
+                previous = size
+            }
+            return (children[..<positive], total)
         }
 
-        // Render directory as background so gaps show its color, not black
-        let itemID = nextID; nextID += 1
-        items.append(TreemapItem(
-            id: itemID,
-            node: node,
-            rect: bounds,
-            depth: depth,
-            color: colorForNode(node, depth: depth)
-        ))
+        /// Lays out a folder's nonempty, sorted children in `content`. A sorted tail of at least
+        /// two children each smaller than `smallerItemsArea` becomes one smallerItems item.
+        mutating func place(_ children: ArraySlice<FileNode>, total: Int64, of folder: FileNode,
+                            in content: TreemapRect, depth: Int, branch: Int?) {
+            guard !children.isEmpty, !Task.isCancelled else { return }
+            let scale = content.area / Double(total)
 
-        let totalSize = Double(children.reduce(0) { $0 + $1.size(for: sizeMetric) })
-        guard totalSize > 0 else { return }
+            var sizes: [Double] = []
+            sizes.reserveCapacity(min(children.count, Int(content.area / TreemapMetrics.smallerItemsArea) + 2))
+            var head = children.startIndex
+            var headTotal: Int64 = 0
+            while head < children.endIndex {
+                let size = children[head].size(for: metric)
+                let area = Double(size) * scale
+                if area < TreemapMetrics.smallerItemsArea && children.endIndex - head >= 2 { break }
+                sizes.append(area)
+                headTotal += size
+                head += 1
+            }
+            let smallerCount = children.endIndex - head
+            if smallerCount > 0 { sizes.append(Double(total - headTotal) * scale) }
 
-        // Compute normalized sizes proportional to area
-        let sizes = children.map { Double($0.size(for: sizeMetric)) / totalSize * bounds.area }
+            let rects = TreemapLayoutEngine.squarify(sizes: sizes, in: content)
+            for (offset, laid) in rects.enumerated() {
+                let rect = TreemapRect(x: laid.x, y: laid.y,
+                                       width: max(0, laid.width - TreemapMetrics.gap),
+                                       height: max(0, laid.height - TreemapMetrics.gap))
+                let itemBranch = branch ?? offset
+                guard children.startIndex + offset < head else {
+                    append(folder, rect, depth, .smallerItems(count: smallerCount, size: total - headTotal), itemBranch)
+                    continue
+                }
+                let child = children[children.startIndex + offset]
+                guard child.isDirectory else {
+                    append(child, rect, depth, .file, itemBranch)
+                    continue
+                }
+                let opens: Bool, minimum: CGSize
+                if let byHand = overrides[child.id] {
+                    (opens, minimum) = (byHand, TreemapMetrics.openByHand)
+                } else {
+                    (opens, minimum) = (depth < detailLevel, TreemapMetrics.openByLevel)
+                }
+                let (grandchildren, grandTotal) = opens && depth < TreemapMetrics.maxDepth
+                    && rect.width >= minimum.width && rect.height >= minimum.height
+                    ? childrenBySize(child) : ([], 0)
+                append(child, rect, depth, grandchildren.isEmpty ? .closedFolder : .openFolder, itemBranch)
+                let inner = TreemapRect(
+                    x: rect.x + TreemapMetrics.padding,
+                    y: rect.y + TreemapMetrics.titleHeight,
+                    width: rect.width - 2 * TreemapMetrics.padding,
+                    height: rect.height - TreemapMetrics.titleHeight - TreemapMetrics.padding
+                )
+                place(grandchildren, total: grandTotal, of: child, in: inner, depth: depth + 1, branch: itemBranch)
+            }
+        }
 
-        let rects = squarify(sizes: sizes, in: bounds)
-
-        for (i, child) in children.enumerated() where i < rects.count {
-            layoutNode(child, in: rects[i], depth: depth + 1, sizeMetric: sizeMetric, items: &items, nextID: &nextID)
+        private mutating func append(_ node: FileNode, _ rect: TreemapRect, _ depth: Int,
+                                     _ kind: TreemapItem.Kind, _ branch: Int) {
+            items.append(TreemapItem(id: items.count, node: node, rect: rect, depth: depth, kind: kind, branch: branch))
         }
     }
 
-    func squarify(sizes: [Double], in bounds: TreemapRect) -> [TreemapRect] {
+    static func squarify(sizes: [Double], in bounds: TreemapRect) -> [TreemapRect] {
         guard !sizes.isEmpty else { return [] }
 
         var rects = [TreemapRect](repeating: TreemapRect(x: 0, y: 0, width: 0, height: 0), count: sizes.count)

@@ -25,7 +25,7 @@ struct TreemapRenderer {
 
             // Fill
             let path = Path(roundedRect: screenRect.insetBy(dx: 0.5, dy: 0.5), cornerRadius: 1)
-            context.fill(path, with: .color(Color(cgColor: item.color)))
+            context.fill(path, with: .color(item.node.category.color)) // Task 4 colors by mode
 
             // Border
             context.stroke(path, with: .color(.black.opacity(0.3)), lineWidth: 0.5)

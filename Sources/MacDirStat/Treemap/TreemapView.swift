@@ -149,6 +149,12 @@ struct TreemapView: View {
             .onChange(of: treeVersion) {
                 recomputeLayout(size: geometry.size)
             }
+            .onChange(of: appState.detailLevel) {
+                recomputeLayout(size: geometry.size)
+            }
+            .onChange(of: appState.folderOverrides) {
+                recomputeLayout(size: geometry.size)
+            }
         }
         .background(.black)
 
@@ -232,6 +238,8 @@ struct TreemapView: View {
         lastSize = size
 
         let metric = sizeMetric
+        let level = appState.detailLevel
+        let overrides = appState.folderOverrides
         let previous = appState.layoutTasks[layoutID]
         previous?.cancel()
         appState.layoutTasks[layoutID] = Task.detached { [root] in
@@ -241,9 +249,16 @@ struct TreemapView: View {
             let engine = TreemapLayoutEngine()
             let bounds = TreemapRect(x: 0, y: 0, width: Double(size.width), height: Double(size.height))
             let interval = TreemapSignposts.signposter.beginInterval("layout")
-            let newItems = engine.layout(root: root, in: bounds, sizeMetric: metric)
+            let newItems = engine.layout(root: root, in: bounds, sizeMetric: metric,
+                                         detailLevel: level, overrides: overrides)
             TreemapSignposts.signposter.endInterval("layout", interval)
-            let index = Dictionary(uniqueKeysWithValues: newItems.enumerated().map { (ObjectIdentifier($1.node), $0) })
+            // A smallerItems item shares its folder's node, so the folder's own item wins.
+            var index: [ObjectIdentifier: Int] = [:]
+            index.reserveCapacity(newItems.count)
+            for item in newItems {
+                if case .smallerItems = item.kind { continue }
+                index[ObjectIdentifier(item.node)] = item.id
+            }
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 items = newItems
