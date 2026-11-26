@@ -44,14 +44,21 @@ struct TreemapView: View {
         return items[id]
     }
 
-    /// The selected node's rectangle; the smallerItems block it was folded into; or its nearest
-    /// ancestor's, when it sits inside a closed folder. The shown folder itself has none.
     private var selectedItemID: Int? {
-        var node = selectedNode
+        Self.selectedItemID(of: selectedNode, shown: root, items: itemIndexByNode, smallerItems: smallerItemsByFolder)
+    }
+
+    /// The selected node's rectangle; for a folder without one (folders not shown), its own
+    /// smallerItems block; the block it was folded into; or its nearest ancestor's, when it sits
+    /// inside a closed folder. The shown folder itself has none.
+    static func selectedItemID(of selected: FileNode?, shown root: FileNode, items: [ObjectIdentifier: Int],
+                               smallerItems: [ObjectIdentifier: Int]) -> Int? {
+        var node = selected
         while let current = node, current !== root {
-            if let index = itemIndexByNode[ObjectIdentifier(current)] { return index }
+            // With folders shown, a folder with a block of its own has an item, found first.
+            if let index = items[ObjectIdentifier(current)] ?? smallerItems[ObjectIdentifier(current)] { return index }
             // Only open folders lay out children, so a block in the parent means it holds this one.
-            if let parent = current.parent, let block = smallerItemsByFolder[ObjectIdentifier(parent)] { return block }
+            if let parent = current.parent, let block = smallerItems[ObjectIdentifier(parent)] { return block }
             node = current.parent
         }
         return nil
@@ -169,6 +176,9 @@ struct TreemapView: View {
             .onChange(of: appState.detailLevel) {
                 recomputeLayout(size: geometry.size)
             }
+            .onChange(of: appState.showsFolders) {
+                recomputeLayout(size: geometry.size)
+            }
             .onChange(of: appState.folderOverrides) {
                 recomputeLayout(size: geometry.size, animated: true)
             }
@@ -277,11 +287,17 @@ struct TreemapView: View {
         items.last { $0.rect.contains(point: point) }
     }
 
-    /// Folders drill into themselves. Files, which cover most of the treemap, drill into the
-    /// folder that contains them, unless that folder is already the one shown.
     private func drillDownTarget(for node: FileNode) -> FileNode? {
-        let target = node.isDirectory ? node : node.parent
-        return target === root ? nil : target
+        Self.drillDownTarget(for: node, shown: root, sizeMetric: sizeMetric)
+    }
+
+    /// Folders drill into themselves. Files, which cover most of the treemap, drill into the
+    /// folder that contains them, unless that folder is already the one shown. A folder with
+    /// nothing to lay out would show an empty view, so it offers none.
+    static func drillDownTarget(for node: FileNode, shown root: FileNode, sizeMetric: SizeMetric) -> FileNode? {
+        guard let target = node.isDirectory ? node : node.parent, target !== root,
+              target.children.contains(where: { $0.size(for: sizeMetric) > 0 }) else { return nil }
+        return target
     }
 
     /// `animated` is for navigation and opening or closing folders; resizes and metric or detail
@@ -294,6 +310,7 @@ struct TreemapView: View {
         let metric = sizeMetric
         let level = appState.detailLevel
         let overrides = appState.folderOverrides
+        let showsFolders = appState.showsFolders
         let previous = appState.layoutTasks[layoutID]
         previous?.cancel()
         appState.layoutTasks[layoutID] = Task.detached { [root] in
@@ -304,7 +321,7 @@ struct TreemapView: View {
             let bounds = TreemapRect(x: 0, y: 0, width: Double(size.width), height: Double(size.height))
             let interval = TreemapSignposts.signposter.beginInterval("layout")
             let newItems = engine.layout(root: root, in: bounds, sizeMetric: metric,
-                                         detailLevel: level, overrides: overrides)
+                                         detailLevel: level, overrides: overrides, showsFolders: showsFolders)
             TreemapSignposts.signposter.endInterval("layout", interval)
             // A smallerItems item shares its folder's node, so it goes in a map of its own.
             var index: [ObjectIdentifier: Int] = [:], smaller: [ObjectIdentifier: Int] = [:]

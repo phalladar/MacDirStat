@@ -79,7 +79,8 @@ struct TreemapCommands: Commands {
                 .keyboardShortcut("-")
                 .disabled(!hasTree || !appState.canLessDetail)
             Button("Collapse All") { appState.collapseAll() }
-                .disabled(!hasTree || appState.folderOverrides.isEmpty)
+                .disabled(!hasTree || !appState.canCollapseAll)
+            Toggle("Show Folders", isOn: Bindable(appState).showsFolders)
 
             Divider()
 

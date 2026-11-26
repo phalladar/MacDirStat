@@ -15,11 +15,12 @@ struct TreemapRenderer {
 
     /// Folder color mode: one per child of the shown folder, by size, wrapping after the last.
     private static let branchColors: [Color] = [.blue, .green, .orange, .purple, .red, .teal, .pink, .indigo, .brown]
-    /// Folders in type mode: graphite, so their own color can't pass for a category.
+    /// Folders in type mode: graphite, so their own color can't pass for a category. Dark enough
+    /// in light mode, and light enough in dark mode, that a strip stands apart from the frame around it.
     private static let neutral = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(srgbRed: 0.35, green: 0.35, blue: 0.37, alpha: 1)
-            : NSColor(srgbRed: 0.72, green: 0.72, blue: 0.75, alpha: 1)
+            ? NSColor(srgbRed: 0.44, green: 0.44, blue: 0.46, alpha: 1)
+            : NSColor(srgbRed: 0.64, green: 0.64, blue: 0.67, alpha: 1)
     })
     private static let frameRadius: CGFloat = 6, blockRadius: CGFloat = 4
     private static let tabHeight: CGFloat = 3, barHeight: CGFloat = 4
@@ -87,11 +88,10 @@ struct TreemapRenderer {
                 }
 
             case .closedFolder where !item.hasTitleStrip:
-                // No room for a title: a block with a light tab on top marks it as a folder; a light
-                // body needs a line under the tab for the tab to read.
+                // No room for a title: a tab on top marks the block as a folder. It contrasts with the
+                // frame around it, so the block's top edge is where its tab starts.
                 let tab = Self.snap(min(Self.tabHeight * zoomScale, rect.height / 3), scale)
-                context.fill(shape, with: dark ? Self.bands(rect, (tone.tab, tab), body: tone.bodyTop, tone.bodyBottom)
-                    : Self.bands(rect, (tone.tab, tab), (tone.edge, 1), body: tone.bodyTop, tone.bodyBottom))
+                context.fill(shape, with: Self.bands(rect, (tone.tab, tab), body: tone.bodyTop, tone.bodyBottom))
                 if rect.height > 14 {
                     makeupBar(item.node, in: CGRect(x: rect.minX + 4, y: rect.maxY - Self.barHeight - 4,
                                                     width: rect.width - 8, height: Self.barHeight),
@@ -221,7 +221,7 @@ struct TreemapRenderer {
 private struct Tone {
     let tileSheen: Color, tileTop: Color, tileBottom: Color
     let bodySheen: Color, bodyTop: Color, bodyBottom: Color
-    let stripSheen: Color, strip: Color, edge: Color, tab: Color
+    let stripSheen: Color, strip: Color, tab: Color
 
     init(_ color: Color, dark: Bool, in environment: EnvironmentValues) {
         let base = color.resolve(in: environment)
@@ -239,7 +239,6 @@ private struct Tone {
         bodySheen = Color(lighter(bodyTop, sheen)); self.bodyTop = Color(bodyTop)
         bodyBottom = Color(dark ? scaled(0.66) : lighter(base, 0.2))
         stripSheen = Color(lighter(strip, sheen)); self.strip = Color(strip)
-        edge = Color(scaled(0.85)) // light mode's line under a tab
-        tab = Color(lighter(base, dark ? 0.4 : 0.9))
+        tab = Color(dark ? lighter(base, 0.4) : scaled(0.8))
     }
 }

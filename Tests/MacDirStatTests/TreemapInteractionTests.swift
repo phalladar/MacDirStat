@@ -51,3 +51,29 @@ import Testing
                             depth: 1, kind: .closedFolder, branch: 0)
     #expect(!isOnTitle(CGPoint(x: 105, y: 55), of: small))
 }
+
+@MainActor @Test func flatSelectionOutlinesTheFoldersOwnBlock() {
+    let root = FileNode(inode: 1, name: "root", isDirectory: true)
+    let parent = FileNode(inode: 2, name: "p", isDirectory: true)
+    let folder = FileNode(inode: 3, name: "f", isDirectory: true)
+    root.addChild(parent)
+    parent.addChild(folder)
+    // Without folders shown, neither folder has an item; both have a smallerItems block.
+    let smaller = [ObjectIdentifier(parent): 7, ObjectIdentifier(folder): 9]
+    #expect(TreemapView.selectedItemID(of: folder, shown: root, items: [:], smallerItems: smaller) == 9)
+    #expect(TreemapView.selectedItemID(of: root, shown: root, items: [:], smallerItems: smaller) == nil)
+}
+
+@Test @MainActor func emptyFolderOffersNoDrillDown() {
+    let root = FileNode(inode: 1, name: "root", isDirectory: true)
+    let empty = FileNode(inode: 2, name: "empty", isDirectory: true, ownSize: 4096, allocatedSize: 4096)
+    let full = FileNode(inode: 3, name: "full", isDirectory: true)
+    let file = FileNode(inode: 4, name: "a", isDirectory: false, ownSize: 10, allocatedSize: 10)
+    root.addChild(empty)
+    root.addChild(full)
+    full.addChild(file)
+    root.computeAggregates()
+    #expect(TreemapView.drillDownTarget(for: empty, shown: root, sizeMetric: .allocatedSize) == nil)
+    #expect(TreemapView.drillDownTarget(for: full, shown: root, sizeMetric: .allocatedSize) === full)
+    #expect(TreemapView.drillDownTarget(for: file, shown: root, sizeMetric: .allocatedSize) === full)
+}

@@ -22,10 +22,13 @@ enum TreemapMetrics {
     static let openByHand = CGSize(width: 46, height: 40)
     static let titleMinimum = CGSize(width: 60, height: 36)
     static let smallerItemsArea = 144.0, maxDepth = 32
+    /// Without folders shown, files tile the whole view, so smaller ones get their own block.
+    static let smallerItemsAreaFlat = 64.0
 }
 
 struct TreemapItem: Identifiable, Sendable {
     enum Kind: Sendable, Equatable {
+        /// Without folders shown, `file` is also a folder with nothing to lay out: a plain block.
         case file, openFolder, closedFolder, smallerItems(count: Int, size: Int64)
     }
 
@@ -55,10 +58,14 @@ struct TreemapItem: Identifiable, Sendable {
 struct TreemapLayoutEngine: Sendable {
     /// Lays out root's children, which have depth 1; root itself is not emitted. Parents come
     /// before their children, so the last item containing a point is the deepest one.
+    /// Without `showsFolders`, every folder opens to the depth cap as an invisible group whose
+    /// children fill its rect; only `.file` and `.smallerItems` items are emitted, and the
+    /// smaller-items area is `smallerItemsAreaFlat`.
     func layout(root: FileNode, in bounds: TreemapRect, sizeMetric: SizeMetric,
-                detailLevel: Int, overrides: [UInt64: Bool]) -> [TreemapItem] {
+                detailLevel: Int, overrides: [UInt64: Bool], showsFolders: Bool = true) -> [TreemapItem] {
         guard bounds.width > 0, bounds.height > 0 else { return [] }
-        var pass = LayoutPass(metric: sizeMetric, detailLevel: detailLevel, overrides: overrides)
+        var pass = LayoutPass(metric: sizeMetric, detailLevel: detailLevel, overrides: overrides,
+                              showsFolders: showsFolders)
         let (children, total) = pass.childrenBySize(root)
         pass.place(children, total: total, of: root, in: bounds, depth: 1, branch: nil)
         return pass.items
@@ -68,12 +75,16 @@ struct TreemapLayoutEngine: Sendable {
         let metric: SizeMetric
         let detailLevel: Int
         let overrides: [UInt64: Bool]
+        let showsFolders: Bool
+        let smallerItemsArea: Double
         var items: [TreemapItem] = []
 
-        init(metric: SizeMetric, detailLevel: Int, overrides: [UInt64: Bool]) {
+        init(metric: SizeMetric, detailLevel: Int, overrides: [UInt64: Bool], showsFolders: Bool) {
             self.metric = metric
             self.detailLevel = detailLevel
             self.overrides = overrides
+            self.showsFolders = showsFolders
+            smallerItemsArea = showsFolders ? TreemapMetrics.smallerItemsArea : TreemapMetrics.smallerItemsAreaFlat
             items.reserveCapacity(4096)
         }
 
@@ -99,20 +110,21 @@ struct TreemapLayoutEngine: Sendable {
         }
 
         /// Lays out a folder's nonempty, sorted children in `content`. A sorted tail of at least
-        /// two children each smaller than `smallerItemsArea` becomes one smallerItems item.
+        /// two children each smaller than the pass's smaller-items area becomes one smallerItems item. A
+        /// `content` with no area, as a sliver folder's without folders shown, gets nothing.
         mutating func place(_ children: ArraySlice<FileNode>, total: Int64, of folder: FileNode,
                             in content: TreemapRect, depth: Int, branch: Int?) {
-            guard !children.isEmpty, !Task.isCancelled else { return }
+            guard !children.isEmpty, content.width > 0, content.height > 0, !Task.isCancelled else { return }
             let scale = content.area / Double(total)
 
             var sizes: [Double] = []
-            sizes.reserveCapacity(min(children.count, Int(content.area / TreemapMetrics.smallerItemsArea) + 2))
+            sizes.reserveCapacity(min(children.count, Int(content.area / smallerItemsArea) + 2))
             var head = children.startIndex
             var headTotal: Int64 = 0
             while head < children.endIndex {
                 let size = children[head].size(for: metric)
                 let area = Double(size) * scale
-                if area < TreemapMetrics.smallerItemsArea && children.endIndex - head >= 2 { break }
+                if area < smallerItemsArea && children.endIndex - head >= 2 { break }
                 sizes.append(area)
                 headTotal += size
                 head += 1
@@ -123,7 +135,8 @@ struct TreemapLayoutEngine: Sendable {
             let rects = TreemapLayoutEngine.squarify(sizes: sizes, in: content)
             let half = TreemapMetrics.gap / 2
             for (offset, laid) in rects.enumerated() {
-                // Half the gap on every side, so siblings sit one gap apart and edges match.
+                // Half the gap on every side, so siblings sit one gap apart and a frame's children
+                // sit padding plus half a gap inside it on all four sides, the strip's edge counting as the top.
                 let rect = TreemapRect(x: laid.x + half, y: laid.y + half,
                                        width: max(0, laid.width - TreemapMetrics.gap),
                                        height: max(0, laid.height - TreemapMetrics.gap))
@@ -137,24 +150,37 @@ struct TreemapLayoutEngine: Sendable {
                     append(child, rect, depth, .file, itemBranch)
                     continue
                 }
-                let opens: Bool, minimum: CGSize
-                if let byHand = overrides[child.id] {
-                    (opens, minimum) = (byHand, TreemapMetrics.openByHand)
-                } else {
-                    (opens, minimum) = (depth < detailLevel, TreemapMetrics.openByLevel)
-                }
-                let (grandchildren, grandTotal) = opens && depth < TreemapMetrics.maxDepth
-                    && rect.width >= minimum.width && rect.height >= minimum.height
+                let (grandchildren, grandTotal) = depth < TreemapMetrics.maxDepth && opens(child, rect, depth)
                     ? childrenBySize(child) : ([], 0)
+                // Without folders shown, a folder is an invisible group: its children fill the rect
+                // it was laid out in, so every block sits one gap from its neighbours at any depth.
+                // One with nothing to lay out, empty or at the depth cap, is a plain block.
+                guard showsFolders else {
+                    if grandchildren.isEmpty {
+                        append(child, rect, depth, .file, itemBranch)
+                    } else {
+                        place(grandchildren, total: grandTotal, of: child, in: laid, depth: depth + 1, branch: itemBranch)
+                    }
+                    continue
+                }
                 append(child, rect, depth, grandchildren.isEmpty ? .closedFolder : .openFolder, itemBranch)
                 let inner = TreemapRect(
                     x: rect.x + TreemapMetrics.padding,
-                    y: rect.y + TreemapMetrics.titleHeight,
+                    y: rect.y + TreemapMetrics.titleHeight + TreemapMetrics.padding,
                     width: rect.width - 2 * TreemapMetrics.padding,
-                    height: rect.height - TreemapMetrics.titleHeight - TreemapMetrics.padding
+                    height: rect.height - TreemapMetrics.titleHeight - 2 * TreemapMetrics.padding
                 )
                 place(grandchildren, total: grandTotal, of: child, in: inner, depth: depth + 1, branch: itemBranch)
             }
+        }
+
+        /// Whether a folder lays out its children: by hand or by level, given room for them.
+        /// Without folders shown, every folder does.
+        private func opens(_ folder: FileNode, _ rect: TreemapRect, _ depth: Int) -> Bool {
+            guard showsFolders else { return true }
+            let (opens, minimum) = overrides[folder.id].map { ($0, TreemapMetrics.openByHand) }
+                ?? (depth < detailLevel, TreemapMetrics.openByLevel)
+            return opens && rect.width >= minimum.width && rect.height >= minimum.height
         }
 
         private mutating func append(_ node: FileNode, _ rect: TreemapRect, _ depth: Int,

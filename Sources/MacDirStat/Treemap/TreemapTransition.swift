@@ -32,7 +32,7 @@ struct TreemapTransition: Sendable {
         let node: ObjectIdentifier
         let smaller: Bool
         init(_ item: TreemapItem) { node = ObjectIdentifier(item.node); smaller = item.isSmallerItems }
-        init(folder: FileNode) { node = ObjectIdentifier(folder); smaller = false }
+        init(folder: FileNode, smaller: Bool = false) { node = ObjectIdentifier(folder); self.smaller = smaller }
     }
 
     /// In draw order: each removed item right after the ancestor it shrinks into, so it stays on top of it.
@@ -60,13 +60,17 @@ struct TreemapTransition: Sendable {
         for (index, entry) in old.enumerated() { oldIndex[Key(entry.item)] = index }
         for (index, item) in new.enumerated() { newIndex[Key(item)] = index }
 
-        /// The rect of `node` or its nearest ancestor in a layout, and its index there; nil for the shown folder.
+        /// The rect of `node`, or of its nearest ancestor or the smallerItems block inside it, in a
+        /// layout, and its index there; nil for the shown folder. Without folders shown, folders
+        /// have no item, so a folded file comes from its folder's block.
         func nearest(_ node: FileNode, in index: [Key: Int], shown: Shown?,
                      rect: (Int) -> TreemapRect) -> (index: Int?, rect: TreemapRect)? {
             var current: FileNode? = node
             while let folder = current {
                 if let found = index[Key(folder: folder)] { return (found, rect(found)) }
+                // The shown folder's own block is one of its items, not where the folder is.
                 if folder === shown?.node { return (nil, shown!.rect) }
+                if let found = index[Key(folder: folder, smaller: true)] { return (found, rect(found)) }
                 current = folder.parent
             }
             return nil
@@ -113,17 +117,19 @@ struct TreemapTransition: Sendable {
         return frame
     }
 
-    /// The folder a layout shows and the bounds its depth-1 items fill.
+    /// The folder a layout shows and the bounds its items fill. Without folders shown there may be
+    /// no depth-1 item, so the folder is found up from the first item and the bounds span all of them.
     private static func shown(in items: [TreemapItem]) -> Shown? {
-        var node: FileNode?
+        guard let first = items.first else { return nil }
+        // A smallerItems item's node is the folder that holds it, one level up.
+        var node: FileNode? = first.node
+        for _ in 0..<(first.isSmallerItems ? first.depth - 1 : first.depth) { node = node?.parent }
+        guard let node else { return nil }
         var minX = Double.infinity, minY = Double.infinity, maxX = -Double.infinity, maxY = -Double.infinity
-        for item in items where item.depth == 1 {
-            // A smallerItems item's node is the folder that holds it.
-            node = node ?? (item.isSmallerItems ? item.node : item.node.parent)
+        for item in items {
             minX = min(minX, item.rect.x); minY = min(minY, item.rect.y)
             maxX = max(maxX, item.rect.x + item.rect.width); maxY = max(maxY, item.rect.y + item.rect.height)
         }
-        guard let node else { return nil }
         return Shown(node: node, rect: TreemapRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY))
     }
 }

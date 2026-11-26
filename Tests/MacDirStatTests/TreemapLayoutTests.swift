@@ -74,9 +74,9 @@ private func tree(_ spec: Spec) -> FileNode {
 private let screen = TreemapRect(x: 0, y: 0, width: 1200, height: 800)
 
 private func lay(_ root: FileNode, in bounds: TreemapRect = screen, level: Int = 3,
-                 overrides: [UInt64: Bool] = [:]) -> [TreemapItem] {
+                 overrides: [UInt64: Bool] = [:], showsFolders: Bool = true) -> [TreemapItem] {
     TreemapLayoutEngine().layout(root: root, in: bounds, sizeMetric: .allocatedSize,
-                                 detailLevel: level, overrides: overrides)
+                                 detailLevel: level, overrides: overrides, showsFolders: showsFolders)
 }
 
 private func item(_ node: FileNode, in items: [TreemapItem]) -> TreemapItem? {
@@ -152,18 +152,19 @@ private func mixedTree() -> FileNode {
     return tree(.folder(folders + files(99)))
 }
 
-@Test func childrenStayInsideFrameBelowTitle() throws {
+@Test func childrenSitOneInsetFromTheFrameOnEverySide() throws {
     let items = lay(mixedTree(), level: 8)
     #expect(items.contains { $0.depth == 3 })
-    let eps = 1e-9
-    for child in items where child.depth > 1 {
-        let container = child.isSmallerItems ? child.node : child.node.parent
-        let parent = try #require(items.first { $0.node === container && $0.kind == .openFolder })
-        let p = parent.rect, c = child.rect
-        #expect(c.x >= p.x + TreemapMetrics.padding - eps)
-        #expect(c.x + c.width <= p.x + p.width - TreemapMetrics.padding + eps)
-        #expect(c.y >= p.y + TreemapMetrics.titleHeight - eps)
-        #expect(c.y + c.height <= p.y + p.height - TreemapMetrics.padding + eps)
+    // Below the title strip as on the other three sides: padding plus the child's half gap.
+    let inset = TreemapMetrics.padding + TreemapMetrics.gap / 2, eps = 1e-9
+    for parent in items where parent.kind == .openFolder {
+        let children = items.filter { ($0.isSmallerItems ? $0.node : $0.node.parent) === parent.node && $0.depth == parent.depth + 1 }
+        try #require(!children.isEmpty)
+        let p = parent.rect
+        #expect(abs(children.map(\.rect.x).min()! - (p.x + inset)) < eps)
+        #expect(abs(children.map(\.rect.y).min()! - (p.y + TreemapMetrics.titleHeight + inset)) < eps)
+        #expect(abs(children.map { $0.rect.x + $0.rect.width }.max()! - (p.x + p.width - inset)) < eps)
+        #expect(abs(children.map { $0.rect.y + $0.rect.height }.max()! - (p.y + p.height - inset)) < eps)
     }
 }
 
@@ -202,7 +203,7 @@ private func mixedTree() -> FileNode {
     for bounds in [TreemapRect(x: 0, y: 0, width: 30, height: 12), TreemapRect(x: 0, y: 0, width: 200, height: 17)] {
         let items = lay(root, in: bounds, level: 8, overrides: everything)
         #expect(!items.isEmpty)
-        for item in items {
+        for item in items + lay(root, in: bounds, showsFolders: false) {
             #expect(item.rect.width >= 0 && item.rect.height >= 0)
             #expect(item.rect.width.isFinite && item.rect.height.isFinite)
         }
@@ -243,7 +244,86 @@ private func mixedTree() -> FileNode {
     #expect(items.contains { $0.depth == 3 && $0.branch == 0 })
 }
 
-// Opt in with a path to scan. Prints median layout and offscreen draw times at levels 3 and 8.
+// MARK: - Show Folders off
+
+/// root → a → b → files, with an empty folder and a loose file beside a.
+private func flatTree() -> FileNode {
+    tree(.folder([
+        .folder([.folder((1...8).map { .file($0 * 10_000) }), .file(30_000), .file(20_000)]),
+        .folder([], own: 4096),
+        .file(60_000),
+    ]))
+}
+
+@Test func flatModeEmitsNoFolders() {
+    let root = flatTree()
+    let empty = root.children.first { $0.children.isEmpty && $0.isDirectory }!
+    let items = lay(root, showsFolders: false)
+    #expect(!items.contains { $0.kind == .openFolder })
+    // An empty folder is a plain block: no title, no chevron.
+    #expect(!items.contains { $0.kind == .closedFolder })
+    let folderBlocks: [UInt64] = items.filter { $0.node.isDirectory }.map(\.node.id)
+    #expect(folderBlocks == [empty.id])
+    #expect(items.filter { $0.kind == .file }.count == 12)
+    #expect(items.map(\.depth).max() == 3)
+    #expect(items.enumerated().allSatisfy { $0.offset == $0.element.id })
+}
+
+@Test func flatModeIgnoresDetailAndOverrides() {
+    let root = flatTree()
+    let a = root.children[0]
+    func shape(_ items: [TreemapItem]) -> [[Double]] {
+        items.map { [Double($0.node.id), $0.rect.x, $0.rect.y, $0.rect.width, $0.rect.height, Double($0.depth)] }
+    }
+    let base = shape(lay(root, level: 1, showsFolders: false))
+    #expect(shape(lay(root, level: 8, showsFolders: false)) == base)
+    #expect(shape(lay(root, overrides: [a.id: false], showsFolders: false)) == base)
+}
+
+@Test func flatModeBlocksTileTheViewOneGapApart() {
+    // Grown by half the gap, the blocks of a nested layout tile the view exactly: every two
+    // neighbours sit one gap apart at any depth, with no margin added at a folder's edge.
+    let root = tree(.folder([.folder([.folder([.file(300), .file(200), .file(100)]), .file(250)]), .file(400)]))
+    let items = lay(root, showsFolders: false)
+    #expect(items.count == 5 && items.map(\.depth).max() == 3)
+    let half = TreemapMetrics.gap / 2, eps = 1e-9
+    let tiles = items.map { TreemapRect(x: $0.rect.x - half, y: $0.rect.y - half,
+                                        width: $0.rect.width + 2 * half, height: $0.rect.height + 2 * half) }
+    #expect(abs(tiles.reduce(0) { $0 + $1.area } - screen.area) < 1e-6 * screen.area)
+    for (i, a) in tiles.enumerated() {
+        #expect(a.x >= -eps && a.y >= -eps && a.x + a.width <= screen.width + eps && a.y + a.height <= screen.height + eps)
+        for b in tiles[(i + 1)...] {
+            let overlap = max(0, min(a.x + a.width, b.x + b.width) - max(a.x, b.x))
+                * max(0, min(a.y + a.height, b.y + b.height) - max(a.y, b.y))
+            #expect(overlap < eps)
+        }
+    }
+}
+
+@Test func flatModeStaysBounded() {
+    // One file per folder big enough for a block of its own; the 99 others fold.
+    let folders: [Spec] = (0..<500).map { (n: Int) -> Spec in
+        let small: [Spec] = (1..<100).map { (i: Int) -> Spec in .file(Int64(i % 7 + n % 13 + 1)) }
+        return .folder([.file(1_000)] + small)
+    }
+    let root = tree(.folder(folders))
+    let items = lay(root, showsFolders: false)
+    #expect(items.count < 10_000)
+    #expect(items.count > lay(root, level: 8).count)
+    #expect(items.filter { $0.kind == .file }.map(\.depth).min() == 2)
+    #expect(!items.contains { $0.kind == .openFolder })
+}
+
+@Test func flatModeStopsAtDepthCap() {
+    let (root, folders) = chain(40)
+    let items = lay(root, showsFolders: false)
+    #expect(items.count == 1)
+    #expect(items[0].node === folders[TreemapMetrics.maxDepth - 1])
+    #expect(items[0].depth == TreemapMetrics.maxDepth && items[0].kind == .file)
+}
+
+// Opt in with a path to scan. Prints median layout and offscreen draw times at levels 3 and 8,
+// and without folders shown.
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MACDIRSTAT_BENCH_PATH"] != nil))
 @MainActor func layoutBenchmark() async throws {
     let path = try #require(ProcessInfo.processInfo.environment["MACDIRSTAT_BENCH_PATH"])
@@ -256,13 +336,13 @@ private func mixedTree() -> FileNode {
         Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
     }
 
-    for level in [3, 8] {
+    for (level, showsFolders) in [(3, true), (8, true), (3, false)] {
         var items: [TreemapItem] = []
         var layoutTimes: [Double] = []
         for _ in 0..<5 {
             layoutTimes.append(milliseconds(clock.measure {
                 items = engine.layout(root: root, in: bounds, sizeMetric: .allocatedSize,
-                                      detailLevel: level, overrides: [:])
+                                      detailLevel: level, overrides: [:], showsFolders: showsFolders)
             }))
         }
 
@@ -276,7 +356,7 @@ private func mixedTree() -> FileNode {
             }.frame(width: 1200, height: 800)
             drawTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
         }
-        print("BENCH path=\(path) level=\(level) items=\(items.count) layout_ms_median=\(median(layoutTimes)) draw_ms_median=\(median(drawTimes))")
+        print("BENCH path=\(path) level=\(level) folders=\(showsFolders) items=\(items.count) layout_ms_median=\(median(layoutTimes)) draw_ms_median=\(median(drawTimes))")
 
         // Halfway through a transition: building it, then one frame with every item it draws.
         func timeTransition(_ name: String, from old: [TreemapItem], to new: [TreemapItem]) {
@@ -294,19 +374,19 @@ private func mixedTree() -> FileNode {
                 }.frame(width: 1200, height: 800)
                 frameTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
             }
-            print("BENCH level=\(level) \(name) frame_items=\(transition.frame(at: 0.5).count) transition_setup_ms_median=\(median(setupTimes)) transition_frame_ms_median=\(median(frameTimes))")
+            print("BENCH level=\(level) folders=\(showsFolders) \(name) frame_items=\(transition.frame(at: 0.5).count) transition_setup_ms_median=\(median(setupTimes)) transition_frame_ms_median=\(median(frameTimes))")
         }
 
         // Opening the largest closed folder in place.
-        if let closed = items.first(where: { $0.kind == .closedFolder }) {
+        if showsFolders, let closed = items.first(where: { $0.kind == .closedFolder }) {
             let opened = engine.layout(root: root, in: bounds, sizeMetric: .allocatedSize, detailLevel: level,
                                        overrides: [closed.node.id: true])
             timeTransition("open=\(closed.node.name)", from: laidOut, to: opened)
         }
         // Drilling into the largest folder and back: the old layout fades while the new one grows over it.
-        if let folder = items.first(where: { $0.depth == 1 && $0.node.isDirectory })?.node {
+        if let folder = root.children.first(where: \.isDirectory) {
             let inside = engine.layout(root: folder, in: bounds, sizeMetric: .allocatedSize,
-                                       detailLevel: level, overrides: [:])
+                                       detailLevel: level, overrides: [:], showsFolders: showsFolders)
             timeTransition("drill=\(folder.name)", from: laidOut, to: inside)
             timeTransition("back=\(folder.name)", from: inside, to: laidOut)
         }
@@ -314,17 +394,19 @@ private func mixedTree() -> FileNode {
 }
 
 // Opt in with a folder to scan. Writes the treemap at level 3 in light and dark, by type and by
-// folder, as PNGs to MACDIRSTAT_SNAPSHOT_OUT (default: the temporary directory) for a look by eye.
+// folder, and without folders by type, as PNGs to MACDIRSTAT_SNAPSHOT_OUT (default: the temporary
+// directory) for a look by eye.
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MACDIRSTAT_SNAPSHOT_PATH"] != nil))
 @MainActor func treemapSnapshots() async throws {
     let environment = ProcessInfo.processInfo.environment
     let root = try await scan(try #require(environment["MACDIRSTAT_SNAPSHOT_PATH"]))
     let output = URL(fileURLWithPath: environment["MACDIRSTAT_SNAPSHOT_OUT"] ?? NSTemporaryDirectory())
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-    let items = TreemapLayoutEngine().layout(root: root, in: TreemapRect(x: 0, y: 0, width: 1200, height: 800),
-                                             sizeMetric: .allocatedSize, detailLevel: 3, overrides: [:])
     for scheme in [ColorScheme.light, .dark] {
-        for mode in TreemapColorMode.allCases {
+        for (mode, showsFolders) in [(TreemapColorMode.type, true), (.folder, true), (.type, false)] {
+            let items = TreemapLayoutEngine().layout(root: root, in: TreemapRect(x: 0, y: 0, width: 1200, height: 800),
+                                                     sizeMetric: .allocatedSize, detailLevel: 3, overrides: [:],
+                                                     showsFolders: showsFolders)
             let canvas = Canvas { context, size in
                 TreemapRenderer(items: items, zoomScale: 1, panOffset: .zero, showLabels: true,
                                 sizeMetric: .allocatedSize, colorMode: mode, contrast: .standard)
@@ -336,7 +418,8 @@ private func mixedTree() -> FileNode {
             let renderer = ImageRenderer(content: canvas)
             renderer.scale = 2
             let image = try #require(renderer.cgImage)
-            let url = output.appendingPathComponent("treemap-\(scheme == .dark ? "dark" : "light")-\(mode.rawValue).png")
+            let url = output.appendingPathComponent(
+                "treemap-\(scheme == .dark ? "dark" : "light")-\(mode.rawValue)\(showsFolders ? "" : "-flat").png")
             let destination = try #require(CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil))
             CGImageDestinationAddImage(destination, image, nil)
             #expect(CGImageDestinationFinalize(destination))

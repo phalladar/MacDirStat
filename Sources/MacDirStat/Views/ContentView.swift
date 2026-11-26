@@ -188,6 +188,11 @@ struct ContentView: View {
         }
 
         ToolbarItem(placement: .primaryAction) {
+            Toggle("Show Folders", systemImage: "rectangle.3.group", isOn: Bindable(appState).showsFolders)
+                .help("Show Folders")
+        }
+
+        ToolbarItem(placement: .primaryAction) {
             Picker("Size", selection: Binding(get: { appState.sizeMetric }, set: { metric in
                 appState.sizeMetric = metric
                 // Picking a metric after Scan Drive goes back to the scanned tree.

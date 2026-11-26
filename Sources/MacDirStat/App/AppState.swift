@@ -41,6 +41,9 @@ final class AppState {
     var detailLevel = 3
     static let detailRange = 1...8
     var colorMode: TreemapColorMode = .type
+    /// Off draws only files and smaller-items blocks, every folder open to the bottom.
+    /// The detail level and hand-opened folders then don't apply, but are kept for when it's back on.
+    var showsFolders = true
     /// Folders the user opened or closed by hand in the treemap, by inode. Wins over the detail level.
     private(set) var folderOverrides: [UInt64: Bool] = [:]
     private(set) var expandedIDs: Set<UInt64> = []
@@ -88,9 +91,11 @@ final class AppState {
 
     func collapseAll() { if !folderOverrides.isEmpty { folderOverrides = [:] } }
 
-    var canMoreDetail: Bool { detailLevel < Self.detailRange.upperBound }
+    var canCollapseAll: Bool { showsFolders && !folderOverrides.isEmpty }
 
-    var canLessDetail: Bool { detailLevel > Self.detailRange.lowerBound }
+    var canMoreDetail: Bool { showsFolders && detailLevel < Self.detailRange.upperBound }
+
+    var canLessDetail: Bool { showsFolders && detailLevel > Self.detailRange.lowerBound }
 
     func moreDetail() { detailLevel = min(detailLevel + 1, Self.detailRange.upperBound) }
 

@@ -61,6 +61,17 @@ struct AppStateTreemapTests {
         #expect(t.state.folderOverrides.isEmpty)
     }
 
+    @Test func togglingShowsFoldersKeepsOverrides() {
+        let t = Tree()
+        #expect(t.state.showsFolders)
+        t.state.setFolderOpen(t.b, true)
+        t.state.showsFolders = false
+        #expect(!t.state.canMoreDetail && !t.state.canLessDetail && !t.state.canCollapseAll)
+        t.state.showsFolders = true
+        #expect(t.state.folderOverrides == [t.b.id: true])
+        #expect(t.state.canMoreDetail && t.state.canLessDetail && t.state.canCollapseAll)
+    }
+
     @Test func replaceLeavesStaleOverridesHarmless() async {
         let t = Tree()
         t.state.drillDown(to: t.b)

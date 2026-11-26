@@ -150,3 +150,72 @@ private func matches(_ frame: TreemapTransition.Frame, _ items: [TreemapItem]) -
     #expect(TreemapTransition.progress(elapsed: TreemapTransition.duration) == 1)
     #expect(TreemapTransition.progress(elapsed: 10) == 1)
 }
+
+/// root → { f → { big, 20 tiny }, e }. Without folders shown, f's tiny files fold into its
+/// smaller-items block at root (48 pt² each) and get their own blocks inside f (96 pt²).
+private func flatSample() -> (root: FileNode, f: FileNode) {
+    let f = folder(2, [file(3, 9_980)] + (0..<20).map { file(10 + UInt64($0), 1) })
+    let root = folder(1, [f, file(4, 10_000)])
+    root.computeAggregates()
+    return (root, f)
+}
+
+private func flat(_ root: FileNode) -> [TreemapItem] {
+    TreemapLayoutEngine().layout(root: root, in: bounds, sizeMetric: .allocatedSize,
+                                 detailLevel: 3, overrides: [:], showsFolders: false)
+}
+
+@Test func flatDrillAndBackUseTheFoldersSmallerItemsBlock() throws {
+    let (root, f) = flatSample()
+    let outside = flat(root), inside = flat(f)
+    let tiny = f.children.last!
+    let block = try #require(outside.first { $0.isSmallerItems && $0.node === f }).rect
+    let own = try #require(inside.first { $0.node === tiny }).rect
+    #expect(!outside.contains { $0.node === tiny })
+
+    // Drilling in, a folded file grows out of the block that held it.
+    let grown = try #require(entry(tiny, in: TreemapTransition(from: outside, to: inside).frame(at: 0.5)))
+    #expect(close(grown.rect, lerp(block, own, 0.5)))
+    // Going back, it shrinks into that block again.
+    let shrunk = try #require(entry(tiny, in: TreemapTransition(from: inside, to: outside).frame(at: 0.5)))
+    #expect(close(shrunk.rect, lerp(own, block, 0.5)))
+}
+
+@Test func flatShownFolderFillsTheView() throws {
+    // f's only child is a folder, so no item has depth 1; g lays out where f was.
+    let g = folder(3, [file(4, 6_000), file(5, 4_000)])
+    let f = folder(2, [g])
+    let root = folder(1, [f])
+    root.computeAggregates()
+    let outside = flat(root)
+    #expect(!outside.contains { $0.depth == 1 })
+    // A new file in g, from a layout of g, grows out of the old shown folder: the whole view.
+    let extra = file(6, 1)
+    let inside = flat(g) + [TreemapItem(id: 99, node: extra, rect: TreemapRect(x: 0, y: 0, width: 10, height: 10),
+                                         depth: 1, kind: .file, branch: 0)]
+    g.addChild(extra)
+    let half = try #require(entry(extra, in: TreemapTransition(from: outside, to: inside).frame(at: 0.5)))
+    let rects = outside.map(\.rect)
+    let minX: Double = rects.map(\.x).min()!, minY: Double = rects.map(\.y).min()!
+    let maxX: Double = rects.map { $0.x + $0.width }.max()!
+    let maxY: Double = rects.map { $0.y + $0.height }.max()!
+    let all = TreemapRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    #expect(close(half.rect, lerp(all, TreemapRect(x: 0, y: 0, width: 10, height: 10), 0.5)))
+}
+
+@Test func goingUpFromAFolderWithItsOwnBlockStillFillsTheView() throws {
+    // big's tiny files fold into a block at big's own level.
+    let big = folder(2, [file(3, 1_000_000)] + (0..<20).map { file(10 + UInt64($0), 1) })
+    let root = folder(1, [big, file(4, 500_000)])
+    root.computeAggregates()
+    let inside = lay(big)
+    #expect(inside.contains { $0.isSmallerItems && $0.node === big })
+    let outside = lay(root)
+    let to = try #require(outside.first { $0.node === big }).rect
+    let shown = try #require(entry(big, in: TreemapTransition(from: inside, to: outside).frame(at: 0.5)))
+    // Halfway from the whole view, not from the block.
+    let union = TreemapRect(x: inside.map(\.rect.x).min()!, y: inside.map(\.rect.y).min()!,
+                            width: inside.map { $0.rect.x + $0.rect.width }.max()! - inside.map(\.rect.x).min()!,
+                            height: inside.map { $0.rect.y + $0.rect.height }.max()! - inside.map(\.rect.y).min()!)
+    #expect(close(shown.rect, lerp(union, to, 0.5)))
+}
