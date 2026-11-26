@@ -16,6 +16,9 @@ struct VolumeInfo: Identifiable {
 }
 
 struct WelcomeView: View {
+    /// Name of the scanned folder still loaded, which offers a way back to its treemap.
+    var returnName: String?
+    var onReturn: () -> Void = {}
     let onVolumeSelected: (String) -> Void
 
     @State private var volumes: [VolumeInfo] = []
@@ -55,6 +58,14 @@ struct WelcomeView: View {
                     }
                 }
                 .padding(.horizontal, 40)
+            }
+
+            if let returnName {
+                Button(action: onReturn) {
+                    Label("Back to \(returnName)", systemImage: "chevron.left")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
             }
 
             // Custom folder option
