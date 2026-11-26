@@ -17,7 +17,7 @@ struct ContentView: View {
                 )
                     .navigationSplitViewColumnWidth(min: 200, ideal: 300, max: 400)
             } else {
-                EmptyState("No Scan", systemImage: "internaldrive",
+                EmptyState(title: "No Scan", systemImage: "internaldrive",
                            description: "Choose a drive or folder to see what takes up space.")
             }
         } detail: {
@@ -99,12 +99,12 @@ struct ContentView: View {
                 DetailPanelView(node: selected, sizeMetric: appState.sizeMetric, treeVersion: appState.treeVersion)
                     .inspectorColumnWidth(min: 250, ideal: 300, max: 400)
             } else {
-                EmptyState("No Selection", systemImage: "info.circle",
+                EmptyState(title: "No Selection", systemImage: "info.circle",
                            description: "Select a folder or file to see its details.")
             }
         }
         .onExitCommand {
-            // Esc selects the folder the treemap shows, which draws no outline.
+            // Esc selects the folder the treemap shows, which clears the selection ring and dimming.
             if let root = appState.treemapRoot { appState.selectedNode = root }
         }
         .toolbar { toolbar }
@@ -243,12 +243,6 @@ struct ContentView: View {
 /// at body size, and a caption.
 private struct EmptyState: View {
     let title: String, systemImage: String, description: String
-
-    init(_ title: String, systemImage: String, description: String) {
-        self.title = title
-        self.systemImage = systemImage
-        self.description = description
-    }
 
     var body: some View {
         VStack(spacing: 4) {

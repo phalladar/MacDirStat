@@ -4,20 +4,8 @@ import SwiftUI
 struct SelectionShape {
     var rect: TreemapRect
     var radius: Double
-    /// 1 for a folder, whose outside is dimmed; 0 for a file.
+    /// 1 when the rest of the view is dimmed around a selected folder, 0 when not.
     var dim: Double
-
-    init(rect: TreemapRect, radius: Double, dim: Double) {
-        self.rect = rect
-        self.radius = radius
-        self.dim = dim
-    }
-
-    /// `item`'s shape: its rect, and the corner radius it is drawn with at `zoomScale`.
-    init(_ item: TreemapItem, dims: Bool, zoomScale: CGFloat) {
-        let size = CGSize(width: item.rect.width * zoomScale, height: item.rect.height * zoomScale)
-        self.init(rect: item.rect, radius: TreemapRenderer.cornerRadius(of: item, size: size) / zoomScale, dim: dims ? 1 : 0)
-    }
 
     func interpolated(to end: SelectionShape, _ t: Double) -> SelectionShape {
         func mix(_ a: Double, _ b: Double) -> Double { a + (b - a) * t }
@@ -28,7 +16,15 @@ struct SelectionShape {
     }
 }
 
-/// The selection, built on main's: a selected folder dims everything outside it. The cut-out
+extension SelectionShape {
+    /// `item`'s shape: its rect, and the corner radius it is drawn with at `zoomScale`.
+    init(_ item: TreemapItem, dims: Bool, zoomScale: CGFloat) {
+        let size = CGSize(width: item.rect.width * zoomScale, height: item.rect.height * zoomScale)
+        self.init(rect: item.rect, radius: TreemapRenderer.cornerRadius(of: item, size: size) / zoomScale, dim: dims ? 1 : 0)
+    }
+}
+
+/// The selection: a selected folder dims everything outside it. The cut-out
 /// follows the item's rounded shape, and an accent ring with a soft shadow lifts the item above
 /// its neighbours. When the selection moves within one layout, ring and cut-out travel to the new item.
 struct TreemapSelectionOverlay: View, Equatable {
@@ -102,12 +98,8 @@ struct TreemapSelectionOverlay: View, Equatable {
             guard let selection, let target = shape(of: selection) else { return }
             let shape = from?.interpolated(to: target, progress) ?? target
             // Edges snapped like the item's, so a still ring sits exactly on it.
-            let scale = context.environment.displayScale
-            func snap(_ v: Double) -> CGFloat { TreemapRenderer.snap(v, scale) }
-            let r = shape.rect
-            let minX = snap(panOffset.x + r.x * zoomScale), minY = snap(panOffset.y + r.y * zoomScale)
-            let rect = CGRect(x: minX, y: minY, width: snap(panOffset.x + (r.x + r.width) * zoomScale) - minX,
-                              height: snap(panOffset.y + (r.y + r.height) * zoomScale) - minY)
+            let rect = TreemapRenderer.screenRect(of: shape.rect, zoomScale: zoomScale, panOffset: panOffset,
+                                                  scale: context.environment.displayScale)
             Self.draw(rect, radius: shape.radius * zoomScale, dim: shape.dim, contrast: contrast, in: &context, size: size)
         }
     }
@@ -122,7 +114,7 @@ struct TreemapSelectionOverlay: View, Equatable {
         var outside = Path(viewport)
         outside.addPath(shape)
         if dim > 0 {
-            // Softer than main's 0.55: the ring marks the folder, the scrim only sets the rest back.
+            // Light, since the ring marks the folder and the scrim only sets the rest back.
             // Dark mode's colors are already dim, so it takes more to set them back.
             context.fill(outside, with: .color(.black.opacity((dark ? 0.45 : 0.3) * dim)), style: FillStyle(eoFill: true))
         }
@@ -131,7 +123,8 @@ struct TreemapSelectionOverlay: View, Equatable {
             // shadow is lost on a dark treemap, so there it glows in the accent color.
             context.drawLayer { layer in
                 layer.clip(to: outside, style: FillStyle(eoFill: true))
-                layer.addFilter(.shadow(color: dark ? .accentColor.opacity(0.6) : .black.opacity(0.35), radius: 6, y: dark ? 0 : 2))
+                layer.addFilter(.shadow(color: dark ? .accentColor.opacity(0.6) : .black.opacity(0.35),
+                                        radius: 6, y: dark ? 0 : 2))
                 layer.fill(shape, with: .color(.black))
             }
         }

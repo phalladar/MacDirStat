@@ -326,97 +326,38 @@ private func flatTree() -> FileNode {
     #expect(items.last!.depth == TreemapMetrics.maxDepth && items.last!.kind == .file)
 }
 
-// Opt in with a path to scan. Prints median layout and offscreen draw times at levels 3 and 8,
-// and without folders shown.
+// Opt in with a path to scan. Prints median layout times at levels 3 and 8 and without folders
+// shown, and what drilling in and out costs a transition: building it, and computing one frame.
 @Test(.enabled(if: ProcessInfo.processInfo.environment["MACDIRSTAT_BENCH_PATH"] != nil))
-@MainActor func layoutBenchmark() async throws {
+func layoutBenchmark() async throws {
     let path = try #require(ProcessInfo.processInfo.environment["MACDIRSTAT_BENCH_PATH"])
     let root = try await scan(path)
     let engine = TreemapLayoutEngine()
     let bounds = TreemapRect(x: 0, y: 0, width: 1200, height: 800)
     let clock = ContinuousClock()
-    func median(_ values: [Double]) -> Double { values.sorted()[values.count / 2] }
-    func milliseconds(_ d: Duration) -> Double {
-        Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
-    }
-    // ImageRenderer's cgImage can defer the pixels; drawing into a 2× bitmap of our own can't.
-    // The CPU rasterizes here, so this bounds an on-screen frame from above.
-    func rasterize(_ view: some View) -> Double {
-        let bitmap = CGContext(data: nil, width: 2400, height: 1600, bitsPerComponent: 8, bytesPerRow: 0,
-                               space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        bitmap.scaleBy(x: 2, y: 2)
-        return milliseconds(clock.measure { ImageRenderer(content: view).render { _, draw in draw(bitmap) } })
+    func median(_ times: Int, _ work: () -> Void) -> Double {
+        let values = (0..<times).map { _ in clock.measure(work) }.sorted()
+        let d = values[times / 2]
+        return Double(d.components.seconds) * 1000 + Double(d.components.attoseconds) / 1e15
     }
 
     for (level, showsFolders) in [(3, true), (8, true), (3, false)] {
+        func lay(_ folder: FileNode) -> [TreemapItem] {
+            engine.layout(root: folder, in: bounds, sizeMetric: .allocatedSize, detailLevel: level,
+                          overrides: [:], showsFolders: showsFolders)
+        }
         var items: [TreemapItem] = []
-        var layoutTimes: [Double] = []
-        for _ in 0..<5 {
-            layoutTimes.append(milliseconds(clock.measure {
-                items = engine.layout(root: root, in: bounds, sizeMetric: .allocatedSize,
-                                      detailLevel: level, overrides: [:], showsFolders: showsFolders)
-            }))
-        }
+        let layout = median(5) { items = lay(root) }
+        print("BENCH path=\(path) level=\(level) folders=\(showsFolders) items=\(items.count) layout_ms_median=\(layout)")
 
-        let laidOut = items
-        var drawTimes: [Double] = [], rasterTimes: [Double] = []
-        for _ in 0..<5 {
-            let canvas = Canvas { context, size in
-                TreemapRenderer(items: laidOut, zoomScale: 1, panOffset: .zero, showLabels: true,
-                                sizeMetric: .allocatedSize, colorMode: .type, contrast: .standard)
-                    .draw(in: &context, size: size)
-            }.frame(width: 1200, height: 800)
-            drawTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
-            rasterTimes.append(rasterize(canvas))
-        }
-        print("BENCH path=\(path) level=\(level) folders=\(showsFolders) items=\(items.count) layout_ms_median=\(median(layoutTimes)) draw_ms_median=\(median(drawTimes)) cpu_raster_2x_ms_median=\(median(rasterTimes))")
-
-        // One selection overlay frame, scrim and shadow included: recorded, and rasterized on the CPU.
-        if let selected = laidOut.first(where: { $0.depth == 2 }) {
-            var recordTimes: [Double] = [], overlayRasterTimes: [Double] = []
-            for _ in 0..<15 {
-                let canvas = Canvas { context, size in
-                    let rect = TreemapRenderer.screenRect(of: selected, zoomScale: 1, panOffset: .zero, scale: 2)
-                    TreemapSelectionOverlay.draw(rect, radius: TreemapRenderer.cornerRadius(of: selected, size: rect.size),
-                                                 dim: 1, contrast: .standard, in: &context, size: size)
-                }.frame(width: 1200, height: 800)
-                recordTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
-                overlayRasterTimes.append(rasterize(canvas))
-            }
-            print("BENCH level=\(level) folders=\(showsFolders) selection_overlay_ms_median=\(median(recordTimes)) cpu_raster_2x_ms_median=\(median(overlayRasterTimes))")
-        }
-
-        // Halfway through a transition: building it, then one frame with every item it draws.
-        func timeTransition(_ name: String, from old: [TreemapItem], to new: [TreemapItem]) {
+        guard let folder = root.children.first(where: \.isDirectory) else { continue }
+        let inside = lay(folder)
+        for (name, old, new) in [("drill", items, inside), ("back", inside, items)] {
             var transition = TreemapTransition(from: old, to: new)
-            var setupTimes: [Double] = [], frameTimes: [Double] = []
-            for _ in 0..<15 {
-                setupTimes.append(milliseconds(clock.measure { transition = TreemapTransition(from: old, to: new) }))
-                let current = transition
-                let canvas = Canvas { context, size in
-                    let frame = current.frame(at: 0.5)
-                    TreemapRenderer(items: frame.map { $0.item.moved(to: $0.rect) }, zoomScale: 1, panOffset: .zero,
-                                    showLabels: true, sizeMetric: .allocatedSize, colorMode: .type, contrast: .standard,
-                                    opacities: frame.map(\.opacity))
-                        .draw(in: &context, size: size)
-                }.frame(width: 1200, height: 800)
-                frameTimes.append(milliseconds(clock.measure { _ = ImageRenderer(content: canvas).cgImage }))
-            }
-            print("BENCH level=\(level) folders=\(showsFolders) \(name) frame_items=\(transition.frame(at: 0.5).count) transition_setup_ms_median=\(median(setupTimes)) transition_frame_ms_median=\(median(frameTimes))")
-        }
-
-        // Opening the largest closed folder in place.
-        if showsFolders, let closed = items.first(where: { $0.kind == .closedFolder }) {
-            let opened = engine.layout(root: root, in: bounds, sizeMetric: .allocatedSize, detailLevel: level,
-                                       overrides: [closed.node.id: true])
-            timeTransition("open=\(closed.node.name)", from: laidOut, to: opened)
-        }
-        // Drilling into the largest folder and back: the old layout fades while the new one grows over it.
-        if let folder = root.children.first(where: \.isDirectory) {
-            let inside = engine.layout(root: folder, in: bounds, sizeMetric: .allocatedSize,
-                                       detailLevel: level, overrides: [:], showsFolders: showsFolders)
-            timeTransition("drill=\(folder.name)", from: laidOut, to: inside)
-            timeTransition("back=\(folder.name)", from: inside, to: laidOut)
+            let setup = median(15) { transition = TreemapTransition(from: old, to: new) }
+            var frameCount = 0
+            let frame = median(15) { frameCount = transition.frame(at: 0.5).count }
+            print("BENCH level=\(level) folders=\(showsFolders) \(name)=\(folder.name) frame_items=\(frameCount) transition_setup_ms_median=\(setup) frame_ms_median=\(frame)")
         }
     }
 }
@@ -445,7 +386,7 @@ private func flatTree() -> FileNode {
                                 sizeMetric: .allocatedSize, colorMode: mode, contrast: .standard)
                     .draw(in: &context, size: size)
                 if let selected {
-                    let rect = TreemapRenderer.screenRect(of: selected, zoomScale: 1, panOffset: .zero, scale: 2)
+                    let rect = TreemapRenderer.screenRect(of: selected.rect, zoomScale: 1, panOffset: .zero, scale: 2)
                     TreemapSelectionOverlay.draw(rect, radius: TreemapRenderer.cornerRadius(of: selected, size: rect.size),
                                                  dim: selected.node.isDirectory ? 1 : 0, contrast: .standard,
                                                  in: &context, size: size)

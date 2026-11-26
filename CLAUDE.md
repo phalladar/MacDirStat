@@ -12,7 +12,7 @@ swift run MacDirStat       # Run the app
 open Package.swift         # Open in Xcode
 ```
 
-No external dependencies. Run `swift test` for scanner, cloud metadata, size-metric, treemap layout, transition and interaction regression tests. Env-gated tests run only when their variable is set: the live File Provider test (`MACDIRSTAT_CLOUD_TEST_PATH`), the treemap benchmark (`MACDIRSTAT_BENCH_PATH`: layout, offscreen draw and transition frame times at 1200×800; run with `-c release`), and treemap snapshots (`MACDIRSTAT_SNAPSHOT_PATH`, PNGs to `MACDIRSTAT_SNAPSHOT_OUT`). No linter configured; Swift 6 strict concurrency mode is enforced via `swiftLanguageMode(.v6)` in Package.swift.
+No external dependencies. Run `swift test` for scanner, cloud metadata, size-metric, treemap layout, transition and interaction regression tests. Env-gated tests run only when their variable is set: the live File Provider test (`MACDIRSTAT_CLOUD_TEST_PATH`), the treemap benchmark (`MACDIRSTAT_BENCH_PATH`: layout times, and transition setup and frame computation for drilling in and out, at 1200×800; run with `-c release`), and treemap snapshots (`MACDIRSTAT_SNAPSHOT_PATH`, PNGs to `MACDIRSTAT_SNAPSHOT_OUT`). No linter configured; Swift 6 strict concurrency mode is enforced via `swiftLanguageMode(.v6)` in Package.swift.
 
 CI (`.github/workflows/build.yml`) runs `swift build` on a pinned `macos-26` runner for PRs and pushes to `main`. It also runs `swift test`.
 

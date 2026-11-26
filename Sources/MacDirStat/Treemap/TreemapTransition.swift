@@ -83,7 +83,11 @@ struct TreemapTransition: Sendable {
             let target = nearest(entry.item.node, in: newIndex, shown: newShown) { new[$0].rect }
             let removed = Entry(item: entry.item, from: entry.rect, to: target?.rect ?? entry.rect,
                                 fromOpacity: entry.opacity, toOpacity: 0)
-            if let after = target?.index { removedAfter[after, default: []].append(removed) } else { removedFirst.append(removed) }
+            if let after = target?.index {
+                removedAfter[after, default: []].append(removed)
+            } else {
+                removedFirst.append(removed)
+            }
         }
 
         var entries = removedFirst

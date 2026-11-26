@@ -26,33 +26,29 @@ import Testing
     #expect(makeupRows([], total: 0).isEmpty)
 }
 
-@Test func chevronAndTitleRegions() {
+@Test func chevronRegion() {
     let node = FileNode(inode: 1, name: "Library", isDirectory: true)
     let open = TreemapItem(id: 0, node: node, rect: TreemapRect(x: 100, y: 50, width: 200, height: 120),
                            depth: 1, kind: .openFolder, branch: 0)
     #expect(isOnChevron(CGPoint(x: 105, y: 55), of: open))
-    #expect(isOnTitle(CGPoint(x: 105, y: 55), of: open))
-    // In the title strip, past the chevron: the title, not the chevron.
+    // In the title strip, past the chevron.
     #expect(!isOnChevron(CGPoint(x: 120, y: 60), of: open))
-    #expect(isOnTitle(CGPoint(x: 120, y: 60), of: open))
     // At 4× the glyph keeps its screen size, so the chevron is 4 layout points wide.
     #expect(isOnChevron(CGPoint(x: 103, y: 55), of: open, zoomScale: 4))
     #expect(!isOnChevron(CGPoint(x: 105, y: 55), of: open, zoomScale: 4))
-    // Below the 18 pt strip: inside the frame, on neither.
+    // Below the 18 pt strip, inside the frame.
     #expect(!isOnChevron(CGPoint(x: 105, y: 70), of: open))
-    #expect(!isOnTitle(CGPoint(x: 150, y: 70), of: open))
 
     // Files have no title strip, and neither do closed folders too small for a title.
     let file = TreemapItem(id: 1, node: FileNode(inode: 2, name: "a", isDirectory: false),
                            rect: open.rect, depth: 1, kind: .file, branch: 0)
-    #expect(!isOnTitle(CGPoint(x: 105, y: 55), of: file))
     #expect(!isOnChevron(CGPoint(x: 105, y: 55), of: file))
     let small = TreemapItem(id: 2, node: node, rect: TreemapRect(x: 100, y: 50, width: 50, height: 30),
                             depth: 1, kind: .closedFolder, branch: 0)
-    #expect(!isOnTitle(CGPoint(x: 105, y: 55), of: small))
+    #expect(!isOnChevron(CGPoint(x: 105, y: 55), of: small))
 }
 
-@MainActor @Test func flatSelectionOutlinesTheFoldersGroup() {
+@MainActor @Test func flatSelectionRingsTheFoldersGroup() {
     let root = FileNode(inode: 1, name: "root", isDirectory: true)
     let folder = FileNode(inode: 2, name: "f", isDirectory: true)
     root.addChild(folder)
@@ -62,14 +58,14 @@ import Testing
     let items = TreemapLayoutEngine().layout(root: root, in: TreemapRect(x: 0, y: 0, width: 400, height: 300),
                                              sizeMetric: .allocatedSize, detailLevel: 3, overrides: [:], showsFolders: false)
     let index = Dictionary(uniqueKeysWithValues: items.filter { !$0.isSmallerItems }.map { (ObjectIdentifier($0.node), $0.id) })
-    // Without folders shown, a folder is a group item, so selection outlines and dims around it.
+    // Without folders shown, a folder is a group item, so selection rings it and dims around it.
     let id = TreemapView.selectedItemID(of: folder, shown: root, items: index, smallerItems: [:])!
     #expect(items[id].kind == .group && items[id].node === folder)
     #expect(TreemapView.dimsAround(items[id], selected: folder))
     #expect(TreemapView.selectedItemID(of: root, shown: root, items: index, smallerItems: [:]) == nil)
 }
 
-@Test @MainActor func emptyFolderOffersNoDrillDown() {
+@MainActor @Test func emptyFolderOffersNoDrillDown() {
     let root = FileNode(inode: 1, name: "root", isDirectory: true)
     let empty = FileNode(inode: 2, name: "empty", isDirectory: true, ownSize: 4096, allocatedSize: 4096)
     let full = FileNode(inode: 3, name: "full", isDirectory: true)

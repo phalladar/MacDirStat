@@ -62,7 +62,7 @@ struct TreemapRenderer {
         var labels: [(GraphicsContext.ResolvedText, CGRect)] = []
 
         for (index, item) in items.enumerated() where item.kind != .group {
-            let rect = Self.screenRect(of: item, zoomScale: zoomScale, panOffset: panOffset, scale: scale)
+            let rect = Self.screenRect(of: item.rect, zoomScale: zoomScale, panOffset: panOffset, scale: scale)
             guard rect.intersects(viewport), rect.width >= 0.5, rect.height >= 0.5 else { continue }
             let opacity = opacities?[index] ?? 1
             if fading { context.opacity = opacity }
@@ -88,7 +88,7 @@ struct TreemapRenderer {
                 if opacity == 1 { stripes.addPath(shape) }
                 // Says what it gathered, never the folder's name; on stripes, in the title color.
                 if labeled && rect.width > 56 && rect.height > 20 {
-                    let text = Text(verbatim: "\(count) smaller items · \(ByteFormatter.string(from: total))")
+                    let text = Text(verbatim: "\(count.formatted()) smaller items · \(ByteFormatter.string(from: total))")
                         .font(.system(size: 11, weight: .semibold)).foregroundStyle(titleColor)
                     titles.append((context.resolve(text), rect.insetBy(dx: 6, dy: 4)))
                 }
@@ -184,13 +184,13 @@ struct TreemapRenderer {
         clipped.stroke(lines, with: .color(dark ? .black.opacity(0.22) : .white.opacity(0.4)), lineWidth: 3)
     }
 
-    /// Where `item` lands on screen, its edges on whole device pixels so every gap is exact.
-    static func screenRect(of item: TreemapItem, zoomScale: CGFloat, panOffset: CGPoint, scale: CGFloat) -> CGRect {
-        let minX = snap(panOffset.x + item.rect.x * zoomScale, scale)
-        let minY = snap(panOffset.y + item.rect.y * zoomScale, scale)
+    /// Where `rect` lands on screen, its edges on whole device pixels so every gap is exact.
+    static func screenRect(of rect: TreemapRect, zoomScale: CGFloat, panOffset: CGPoint, scale: CGFloat) -> CGRect {
+        let minX = snap(panOffset.x + rect.x * zoomScale, scale)
+        let minY = snap(panOffset.y + rect.y * zoomScale, scale)
         return CGRect(x: minX, y: minY,
-                      width: snap(panOffset.x + (item.rect.x + item.rect.width) * zoomScale, scale) - minX,
-                      height: snap(panOffset.y + (item.rect.y + item.rect.height) * zoomScale, scale) - minY)
+                      width: snap(panOffset.x + (rect.x + rect.width) * zoomScale, scale) - minX,
+                      height: snap(panOffset.y + (rect.y + rect.height) * zoomScale, scale) - minY)
     }
 
     /// The item's continuous rounded shape at `rect`, or `inset` inside it, for the item and the

@@ -116,7 +116,7 @@ struct TreemapCommands: Commands {
             Divider()
 
             Button(appState.showInspector ? "Hide Inspector" : "Show Inspector", action: appState.toggleInspector)
-            .keyboardShortcut("i", modifiers: [.command, .option])
+                .keyboardShortcut("i", modifiers: [.command, .option])
 
             Divider()
         }

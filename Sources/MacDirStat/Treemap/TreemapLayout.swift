@@ -68,6 +68,7 @@ struct TreemapLayoutEngine: Sendable {
         guard bounds.width > 0, bounds.height > 0 else { return [] }
         var pass = LayoutPass(metric: sizeMetric, detailLevel: detailLevel, overrides: overrides,
                               showsFolders: showsFolders)
+        pass.items.reserveCapacity(4096)
         let (children, total) = pass.childrenBySize(root)
         pass.place(children, total: total, of: root, in: bounds, depth: 1, branch: nil)
         return pass.items
@@ -78,16 +79,10 @@ struct TreemapLayoutEngine: Sendable {
         let detailLevel: Int
         let overrides: [UInt64: Bool]
         let showsFolders: Bool
-        let smallerItemsArea: Double
         var items: [TreemapItem] = []
 
-        init(metric: SizeMetric, detailLevel: Int, overrides: [UInt64: Bool], showsFolders: Bool) {
-            self.metric = metric
-            self.detailLevel = detailLevel
-            self.overrides = overrides
-            self.showsFolders = showsFolders
-            smallerItemsArea = showsFolders ? TreemapMetrics.smallerItemsArea : TreemapMetrics.smallerItemsAreaFlat
-            items.reserveCapacity(4096)
+        var smallerItemsArea: Double {
+            showsFolders ? TreemapMetrics.smallerItemsArea : TreemapMetrics.smallerItemsAreaFlat
         }
 
         /// Children with a size, largest first, and their total. Scans leave them sorted by
@@ -112,11 +107,10 @@ struct TreemapLayoutEngine: Sendable {
         }
 
         /// Lays out a folder's nonempty, sorted children in `content`. A sorted tail of at least
-        /// two children each smaller than the pass's smaller-items area becomes one smallerItems item. A
-        /// `content` with no area, as a sliver folder's without folders shown, gets nothing.
+        /// two children each smaller than the pass's smaller-items area becomes one smallerItems item.
         mutating func place(_ children: ArraySlice<FileNode>, total: Int64, of folder: FileNode,
                             in content: TreemapRect, depth: Int, branch: Int?) {
-            guard !children.isEmpty, content.width > 0, content.height > 0, !Task.isCancelled else { return }
+            guard !children.isEmpty, !Task.isCancelled else { return }
             let scale = content.area / Double(total)
 
             var sizes: [Double] = []

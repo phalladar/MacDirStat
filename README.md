@@ -96,7 +96,7 @@ MacDirStat only moves items to the Trash, after you confirm, so you can restore 
 
 - **Interactive treemap.** Every file is drawn as a rectangle sized by its disk usage, nested inside titled folder frames, using the squarified treemap layout. Large files and folders stand out at a glance, and bigger rectangles are labeled with their name and size.
 - **Open folders in place.** Click a folder to open it inside the treemap, choose how many levels open on their own with More Detail and Less Detail, and see a folder's contents by type on its closed frame. Items too small to see are gathered into one "smaller items" block per folder.
-- **Show Folders.** Turn it off for the classic look: no frames, just every file down to the bottom, with folders still separated by a thin gap.
+- **Show Folders.** Turn it off for the classic look: no frames, just every file down to the bottom.
 - **Color by type or by folder.** By type, files are colored by category: documents, images, video, audio, code, archives, applications, system, caches, and other. By folder, everything inside each top-level folder shares that folder's color.
 - **Folder tree sidebar.** Browse the folder hierarchy, sorted largest first, with each folder's size.
 - **Inspector panel.** Shows size, allocated size, file and folder counts, last-modified date, and a bar chart of what each folder contains by file type.
@@ -189,9 +189,9 @@ With **Color by Type**, the default, colors show file type, based on the file ex
 | Purple | Code | Swift, Python, JavaScript, HTML, JSON |
 | Teal | Archives | ZIP, DMG, ISO, PKG, TAR |
 | Pink | Applications | DYLIB, SO, DLL, EXE, APK |
-| Light gray | System | PLIST, STRINGS, .DS_Store |
+| Gray | System | PLIST, STRINGS, .DS_Store |
 | Brown | Caches | CACHE, TMP, O, PYC, CLASS |
-| Gray | Other | Everything else, including files without an extension |
+| Gray (a second shade) | Other | Everything else, including files without an extension |
 
 ### Can MacDirStat scan external drives?
 
