@@ -61,7 +61,7 @@ struct TreemapRenderer {
         var titles: [(GraphicsContext.ResolvedText, CGRect)] = []
         var labels: [(GraphicsContext.ResolvedText, CGRect)] = []
 
-        for (index, item) in items.enumerated() {
+        for (index, item) in items.enumerated() where item.kind != .group {
             let rect = Self.screenRect(of: item, zoomScale: zoomScale, panOffset: panOffset, scale: scale)
             guard rect.intersects(viewport), rect.width >= 0.5, rect.height >= 0.5 else { continue }
             let opacity = opacities?[index] ?? 1
@@ -75,6 +75,7 @@ struct TreemapRenderer {
             let shape = Self.outline(of: item, in: rect)
 
             switch item.kind {
+            case .group: break // skipped by the loop
             case .file:
                 context.fill(shape, with: Self.bands(rect, (tone.tileSheen, 1), body: tone.tileTop, tone.tileBottom))
                 if labeled, let label = tileLabel(item.node.name, item.node.size(for: sizeMetric), in: rect, context) {

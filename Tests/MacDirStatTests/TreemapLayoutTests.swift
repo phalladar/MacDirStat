@@ -255,14 +255,18 @@ private func flatTree() -> FileNode {
     ]))
 }
 
-@Test func flatModeEmitsNoFolders() {
+@Test func flatModeDrawsNoFolderFrames() {
     let root = flatTree()
     let empty = root.children.first { $0.children.isEmpty && $0.isDirectory }!
     let items = lay(root, showsFolders: false)
-    #expect(!items.contains { $0.kind == .openFolder })
-    // An empty folder is a plain block: no title, no chevron.
-    #expect(!items.contains { $0.kind == .closedFolder })
-    let folderBlocks: [UInt64] = items.filter { $0.node.isDirectory }.map(\.node.id)
+    #expect(!items.contains { $0.kind == .openFolder || $0.kind == .closedFolder })
+    // Folders with blocks are groups, each before its blocks; an empty folder is a plain block.
+    let a = root.children[0], b = a.children[0]
+    let groups: [UInt64] = items.filter { $0.kind == .group }.map(\.node.id)
+    #expect(groups == [a.id, b.id])
+    let aIndex: Int = items.firstIndex { $0.node === a }!, bIndex: Int = items.firstIndex { $0.node === b }!
+    #expect(bIndex > aIndex)
+    let folderBlocks: [UInt64] = items.filter { $0.node.isDirectory && $0.kind == .file }.map(\.node.id)
     #expect(folderBlocks == [empty.id])
     #expect(items.filter { $0.kind == .file }.count == 12)
     #expect(items.map(\.depth).max() == 3)
@@ -284,7 +288,7 @@ private func flatTree() -> FileNode {
     // Grown by half the gap, the blocks of a nested layout tile the view exactly: every two
     // neighbours sit one gap apart at any depth, with no margin added at a folder's edge.
     let root = tree(.folder([.folder([.folder([.file(300), .file(200), .file(100)]), .file(250)]), .file(400)]))
-    let items = lay(root, showsFolders: false)
+    let items = lay(root, showsFolders: false).filter { $0.kind != .group }
     #expect(items.count == 5 && items.map(\.depth).max() == 3)
     let half = TreemapMetrics.gap / 2, eps = 1e-9
     let tiles = items.map { TreemapRect(x: $0.rect.x - half, y: $0.rect.y - half,
@@ -317,9 +321,9 @@ private func flatTree() -> FileNode {
 @Test func flatModeStopsAtDepthCap() {
     let (root, folders) = chain(40)
     let items = lay(root, showsFolders: false)
-    #expect(items.count == 1)
-    #expect(items[0].node === folders[TreemapMetrics.maxDepth - 1])
-    #expect(items[0].depth == TreemapMetrics.maxDepth && items[0].kind == .file)
+    #expect(items.count == TreemapMetrics.maxDepth && items.dropLast().allSatisfy { $0.kind == .group })
+    #expect(items.last!.node === folders[TreemapMetrics.maxDepth - 1])
+    #expect(items.last!.depth == TreemapMetrics.maxDepth && items.last!.kind == .file)
 }
 
 // Opt in with a path to scan. Prints median layout and offscreen draw times at levels 3 and 8,
@@ -428,13 +432,13 @@ private func flatTree() -> FileNode {
     try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
     for scheme in [ColorScheme.light, .dark] {
         for (mode, showsFolders, selects) in [(TreemapColorMode.type, true, ""), (.folder, true, ""), (.type, false, ""),
-                                              (.type, true, "folder"), (.type, true, "file")] {
+                                              (.type, true, "folder"), (.type, true, "file"), (.type, false, "folder")] {
             let items = TreemapLayoutEngine().layout(root: root, in: TreemapRect(x: 0, y: 0, width: 1200, height: 800),
                                                      sizeMetric: .allocatedSize, detailLevel: 3, overrides: [:],
                                                      showsFolders: showsFolders)
             // The largest open folder below the top level, or the largest file.
             let selected = selects.isEmpty ? nil : items.filter {
-                selects == "folder" ? $0.kind == .openFolder && $0.depth == 2 : $0.kind == .file
+                selects == "folder" ? ($0.kind == .openFolder || $0.kind == .group) && $0.depth == 2 : $0.kind == .file
             }.max { $0.rect.area < $1.rect.area }
             let canvas = Canvas { context, size in
                 TreemapRenderer(items: items, zoomScale: 1, panOffset: .zero, showLabels: true,

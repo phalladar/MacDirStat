@@ -58,15 +58,13 @@ struct TreemapView: View {
         item.node === selected && item.node.isDirectory && !item.isSmallerItems
     }
 
-    /// The selected node's rectangle; for a folder without one (folders not shown), its own
-    /// smallerItems block; the block it was folded into; or its nearest ancestor's, when it sits
-    /// inside a closed folder. The shown folder itself has none.
+    /// The selected node's rectangle; the block it was folded into; or its nearest ancestor's, when
+    /// it sits inside a closed folder. The shown folder itself has none.
     static func selectedItemID(of selected: FileNode?, shown root: FileNode, items: [ObjectIdentifier: Int],
                                smallerItems: [ObjectIdentifier: Int]) -> Int? {
         var node = selected
         while let current = node, current !== root {
-            // With folders shown, a folder with a block of its own has an item, found first.
-            if let index = items[ObjectIdentifier(current)] ?? smallerItems[ObjectIdentifier(current)] { return index }
+            if let index = items[ObjectIdentifier(current)] { return index }
             // Only open folders lay out children, so a block in the parent means it holds this one.
             if let parent = current.parent, let block = smallerItems[ObjectIdentifier(parent)] { return block }
             node = current.parent
@@ -288,7 +286,7 @@ struct TreemapView: View {
                 onSelect(item.node)
             case .openFolder where isOnChevron(point, of: item, zoomScale: zoomScale):
                 appState.setFolderOpen(item.node, false)
-            case .openFolder, .file, .smallerItems:
+            case .openFolder, .group, .file, .smallerItems:
                 onSelect(item.node) // a smallerItems item's node is the folder that holds them
             }
         case 2:
@@ -303,8 +301,9 @@ struct TreemapView: View {
     }
 
     /// Items are drawn in order, so the last one containing the point is the deepest one on top.
+    /// Groups aren't drawn, so the gaps between their blocks hit nothing.
     private func hitTestItem(at point: CGPoint) -> TreemapItem? {
-        items.last { $0.rect.contains(point: point) }
+        items.last { $0.kind != .group && $0.rect.contains(point: point) }
     }
 
     private func drillDownTarget(for node: FileNode) -> FileNode? {
@@ -389,17 +388,24 @@ func isOnChevron(_ point: CGPoint, of item: TreemapItem, zoomScale: CGFloat = 1)
     isOnTitle(point, of: item) && point.x < item.rect.x + 16 / zoomScale
 }
 
-/// What VoiceOver reads of the treemap: every folder and smaller-items block, and only the
-/// largest files, which can number thousands without folders shown.
+/// What VoiceOver reads of the treemap: every folder frame, and only the largest files and
+/// smaller-items blocks, which number thousands without folders shown. Groups aren't drawn, so
+/// they aren't read; the sidebar selects those folders.
 enum TreemapAccessibility {
-    static let maxFiles = 200
+    static let maxBlocks = 200
 
     /// The items to expose, in drawing order, so a folder's contents follow it.
     static func items(of items: [TreemapItem]) -> [TreemapItem] {
-        let files = items.filter { $0.kind == .file }
-        guard files.count > maxFiles else { return items }
-        let dropped = Set(files.sorted { $0.rect.area > $1.rect.area }[maxFiles...].map(\.id))
-        return items.filter { !dropped.contains($0.id) }
+        let blocks = items.filter { $0.kind == .file || $0.isSmallerItems }
+        let kept = blocks.count > maxBlocks
+            ? Set(blocks.sorted { $0.rect.area > $1.rect.area }.prefix(maxBlocks).map(\.id)) : nil
+        return items.filter { item in
+            switch item.kind {
+            case .openFolder, .closedFolder: true
+            case .group: false
+            case .file, .smallerItems: kept?.contains(item.id) ?? true
+            }
+        }
     }
 
     /// "Library, folder, 266 GB, closed", "1,234 smaller items, 5 KB" or "notes.txt, 4 KB".
@@ -408,6 +414,7 @@ enum TreemapAccessibility {
         return switch item.kind {
         case .openFolder: "\(name), folder, \(size), open"
         case .closedFolder: "\(name), folder, \(size), closed"
+        case .group: "\(name), folder, \(size)"
         case .smallerItems(let count, let blockSize): "\(count.formatted()) smaller items, \(ByteFormatter.string(from: blockSize))"
         case .file: "\(name), \(size)"
         }
@@ -446,7 +453,7 @@ struct TreemapAccessibilityLayer: View, Equatable {
                         switch item.kind {
                         case .closedFolder: Button("Open") { appState.setFolderOpen(node, true) }
                         case .openFolder: Button("Close") { appState.setFolderOpen(node, false) }
-                        case .file, .smallerItems: EmptyView()
+                        case .group, .file, .smallerItems: EmptyView()
                         }
                         if let target = TreemapView.drillDownTarget(for: node, shown: root, sizeMetric: sizeMetric) {
                             Button("Enter") { appState.drillDown(to: target) }

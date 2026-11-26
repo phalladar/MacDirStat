@@ -28,8 +28,9 @@ enum TreemapMetrics {
 
 struct TreemapItem: Identifiable, Sendable {
     enum Kind: Sendable, Equatable {
-        /// Without folders shown, `file` is also a folder with nothing to lay out: a plain block.
-        case file, openFolder, closedFolder, smallerItems(count: Int, size: Int64)
+        /// Without folders shown, `file` is also a folder with nothing to lay out: a plain block; a
+        /// folder that lays out blocks is a `group`, not drawn, under them.
+        case file, openFolder, closedFolder, group, smallerItems(count: Int, size: Int64)
     }
 
     let id: Int
@@ -50,7 +51,7 @@ struct TreemapItem: Identifiable, Sendable {
         switch kind {
         case .openFolder: true
         case .closedFolder: rect.width >= TreemapMetrics.titleMinimum.width && rect.height >= TreemapMetrics.titleMinimum.height
-        case .file, .smallerItems: false
+        case .file, .group, .smallerItems: false
         }
     }
 }
@@ -58,9 +59,8 @@ struct TreemapItem: Identifiable, Sendable {
 struct TreemapLayoutEngine: Sendable {
     /// Lays out root's children, which have depth 1; root itself is not emitted. Parents come
     /// before their children, so the last item containing a point is the deepest one.
-    /// Without `showsFolders`, every folder opens to the depth cap as an invisible group whose
-    /// children fill its rect; only `.file` and `.smallerItems` items are emitted, and the
-    /// smaller-items area is `smallerItemsAreaFlat`.
+    /// Without `showsFolders`, every folder opens to the depth cap as a `group` whose children fill
+    /// its cell; groups aren't drawn, and the smaller-items area is `smallerItemsAreaFlat`.
     func layout(root: FileNode, in bounds: TreemapRect, sizeMetric: SizeMetric,
                 detailLevel: Int, overrides: [UInt64: Bool], showsFolders: Bool = true) -> [TreemapItem] {
         guard bounds.width > 0, bounds.height > 0 else { return [] }
@@ -152,15 +152,12 @@ struct TreemapLayoutEngine: Sendable {
                 }
                 let (grandchildren, grandTotal) = depth < TreemapMetrics.maxDepth && opens(child, rect, depth)
                     ? childrenBySize(child) : ([], 0)
-                // Without folders shown, a folder is an invisible group: its children fill the rect
+                // Without folders shown, a folder is a group under its children, which fill the cell
                 // it was laid out in, so every block sits one gap from its neighbours at any depth.
                 // One with nothing to lay out, empty or at the depth cap, is a plain block.
                 guard showsFolders else {
-                    if grandchildren.isEmpty {
-                        append(child, rect, depth, .file, itemBranch)
-                    } else {
-                        place(grandchildren, total: grandTotal, of: child, in: laid, depth: depth + 1, branch: itemBranch)
-                    }
+                    append(child, rect, depth, grandchildren.isEmpty ? .file : .group, itemBranch)
+                    place(grandchildren, total: grandTotal, of: child, in: laid, depth: depth + 1, branch: itemBranch)
                     continue
                 }
                 append(child, rect, depth, grandchildren.isEmpty ? .closedFolder : .openFolder, itemBranch)

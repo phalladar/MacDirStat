@@ -179,16 +179,19 @@ private func flat(_ root: FileNode) -> [TreemapItem] {
     // Going back, it shrinks into that block again.
     let shrunk = try #require(entry(tiny, in: TreemapTransition(from: inside, to: outside).frame(at: 0.5)))
     #expect(close(shrunk.rect, lerp(own, block, 0.5)))
+    // f is a group in `outside`: never drawn, so neither direction animates it.
+    for (from, to) in [(outside, inside), (inside, outside)] {
+        #expect(!TreemapTransition(from: from, to: to).frame(at: 0.5).contains { $0.item.kind == .group })
+    }
 }
 
 @Test func flatShownFolderFillsTheView() throws {
-    // f's only child is a folder, so no item has depth 1; g lays out where f was.
+    // f's only child is a folder; g lays out where f was.
     let g = folder(3, [file(4, 6_000), file(5, 4_000)])
     let f = folder(2, [g])
     let root = folder(1, [f])
     root.computeAggregates()
     let outside = flat(root)
-    #expect(!outside.contains { $0.depth == 1 })
     // A new file in g, from a layout of g, grows out of the old shown folder: the whole view.
     let extra = file(6, 1)
     let inside = flat(g) + [TreemapItem(id: 99, node: extra, rect: TreemapRect(x: 0, y: 0, width: 10, height: 10),

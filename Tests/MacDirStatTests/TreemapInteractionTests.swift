@@ -52,16 +52,21 @@ import Testing
     #expect(!isOnTitle(CGPoint(x: 105, y: 55), of: small))
 }
 
-@MainActor @Test func flatSelectionOutlinesTheFoldersOwnBlock() {
+@MainActor @Test func flatSelectionOutlinesTheFoldersGroup() {
     let root = FileNode(inode: 1, name: "root", isDirectory: true)
-    let parent = FileNode(inode: 2, name: "p", isDirectory: true)
-    let folder = FileNode(inode: 3, name: "f", isDirectory: true)
-    root.addChild(parent)
-    parent.addChild(folder)
-    // Without folders shown, neither folder has an item; both have a smallerItems block.
-    let smaller = [ObjectIdentifier(parent): 7, ObjectIdentifier(folder): 9]
-    #expect(TreemapView.selectedItemID(of: folder, shown: root, items: [:], smallerItems: smaller) == 9)
-    #expect(TreemapView.selectedItemID(of: root, shown: root, items: [:], smallerItems: smaller) == nil)
+    let folder = FileNode(inode: 2, name: "f", isDirectory: true)
+    root.addChild(folder)
+    for inode in 3...4 { folder.addChild(FileNode(inode: UInt64(inode), name: "a\(inode)", isDirectory: false, ownSize: 10, allocatedSize: 10)) }
+    root.addChild(FileNode(inode: 5, name: "b", isDirectory: false, ownSize: 30, allocatedSize: 30))
+    root.computeAggregates()
+    let items = TreemapLayoutEngine().layout(root: root, in: TreemapRect(x: 0, y: 0, width: 400, height: 300),
+                                             sizeMetric: .allocatedSize, detailLevel: 3, overrides: [:], showsFolders: false)
+    let index = Dictionary(uniqueKeysWithValues: items.filter { !$0.isSmallerItems }.map { (ObjectIdentifier($0.node), $0.id) })
+    // Without folders shown, a folder is a group item, so selection outlines and dims around it.
+    let id = TreemapView.selectedItemID(of: folder, shown: root, items: index, smallerItems: [:])!
+    #expect(items[id].kind == .group && items[id].node === folder)
+    #expect(TreemapView.dimsAround(items[id], selected: folder))
+    #expect(TreemapView.selectedItemID(of: root, shown: root, items: index, smallerItems: [:]) == nil)
 }
 
 @Test @MainActor func emptyFolderOffersNoDrillDown() {
@@ -78,7 +83,7 @@ import Testing
     #expect(TreemapView.drillDownTarget(for: file, shown: root, sizeMetric: .allocatedSize) === full)
 }
 
-@Test func accessibilityExposesFoldersBlocksAndTheLargestFiles() {
+@Test func accessibilityExposesFoldersAndTheLargestBlocks() {
     let library = FileNode(inode: 1, name: "Library", isDirectory: true, ownSize: 2_000_000, allocatedSize: 2_000_000)
     let docs = FileNode(inode: 2, name: "Documents", isDirectory: true, ownSize: 3_000_000, allocatedSize: 3_000_000)
     func item(_ id: Int, _ node: FileNode, _ kind: TreemapItem.Kind, area: Double = 100) -> TreemapItem {
@@ -86,21 +91,22 @@ import Testing
                     depth: 1, kind: kind, branch: 0)
     }
     var items = [item(0, library, .openFolder), item(1, docs, .closedFolder),
-                 item(2, library, .smallerItems(count: 12, size: 5_000))]
-    // 201 files, ids 3…203, the largest last: the smallest one, id 3, is left out.
-    for i in 0...TreemapAccessibility.maxFiles {
+                 item(2, library, .smallerItems(count: 12, size: 5_000)), item(3, docs, .group, area: 1_000)]
+    // 201 files, ids 4…204, the largest last. With the block, 202 blocks compete for 200 places:
+    // the two smallest files, ids 4 and 5, are left out, and the group is never exposed.
+    for i in 0...TreemapAccessibility.maxBlocks {
         let file = FileNode(inode: UInt64(10 + i), name: "f\(i)", isDirectory: false, ownSize: 1_000, allocatedSize: 1_000)
-        items.append(item(3 + i, file, .file, area: Double(1 + i)))
+        items.append(item(4 + i, file, .file, area: Double(1 + i)))
     }
 
     let exposed = TreemapAccessibility.items(of: items)
-    #expect(exposed.count == 3 + TreemapAccessibility.maxFiles)
-    #expect(exposed.map(\.id) == [0, 1, 2] + Array(4...203)) // drawing order kept
+    #expect(exposed.count == 2 + TreemapAccessibility.maxBlocks)
+    #expect(exposed.map(\.id) == [0, 1, 2] + Array(6...204)) // drawing order kept
 
     #expect(TreemapAccessibility.label(of: items[0], sizeMetric: .fileSize) == "Library, folder, 2 MB, open")
     #expect(TreemapAccessibility.label(of: items[1], sizeMetric: .fileSize) == "Documents, folder, 3 MB, closed")
     #expect(TreemapAccessibility.label(of: items[2], sizeMetric: .fileSize) == "12 smaller items, 5 KB")
-    #expect(TreemapAccessibility.label(of: items[4], sizeMetric: .fileSize) == "f1, 1 KB")
+    #expect(TreemapAccessibility.label(of: items[5], sizeMetric: .fileSize) == "f1, 1 KB")
 }
 
 // Hover and transition ticks re-run the treemap's body with the same layout: the layer must

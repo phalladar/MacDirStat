@@ -60,25 +60,26 @@ struct TreemapTransition: Sendable {
         for (index, entry) in old.enumerated() { oldIndex[Key(entry.item)] = index }
         for (index, item) in new.enumerated() { newIndex[Key(item)] = index }
 
-        /// The rect of `node`, or of its nearest ancestor or the smallerItems block inside it, in a
-        /// layout, and its index there; nil for the shown folder. Without folders shown, folders
-        /// have no item, so a folded file comes from its folder's block.
+        /// The rect of `node`, or of the smallerItems block it was folded into, or of its nearest
+        /// ancestor, in a layout, and its index there; nil for the shown folder.
         func nearest(_ node: FileNode, in index: [Key: Int], shown: Shown?,
                      rect: (Int) -> TreemapRect) -> (index: Int?, rect: TreemapRect)? {
             var current: FileNode? = node
             while let folder = current {
+                // An ancestor's block holds the node, which is closer than the ancestor; a folder's
+                // own block is one of its items, not where the folder is.
+                if folder !== node, let found = index[Key(folder: folder, smaller: true)] { return (found, rect(found)) }
                 if let found = index[Key(folder: folder)] { return (found, rect(found)) }
-                // The shown folder's own block is one of its items, not where the folder is.
                 if folder === shown?.node { return (nil, shown!.rect) }
-                if let found = index[Key(folder: folder, smaller: true)] { return (found, rect(found)) }
                 current = folder.parent
             }
             return nil
         }
 
         // Removed items go after the new item they shrink into, or first when that is the shown folder.
+        // Groups aren't drawn, so they get no entry; they stay in the indexes as ancestors.
         var removedFirst: [Entry] = [], removedAfter: [Int: [Entry]] = [:]
-        for entry in old where newIndex[Key(entry.item)] == nil {
+        for entry in old where entry.item.kind != .group && newIndex[Key(entry.item)] == nil {
             let target = nearest(entry.item.node, in: newIndex, shown: newShown) { new[$0].rect }
             let removed = Entry(item: entry.item, from: entry.rect, to: target?.rect ?? entry.rect,
                                 fromOpacity: entry.opacity, toOpacity: 0)
@@ -88,7 +89,9 @@ struct TreemapTransition: Sendable {
         var entries = removedFirst
         entries.reserveCapacity(old.count + new.count)
         for (index, item) in new.enumerated() {
-            if let match = oldIndex[Key(item)] {
+            if item.kind == .group {
+                // Not drawn; only what shrinks into it follows.
+            } else if let match = oldIndex[Key(item)] {
                 entries.append(Entry(item: item, from: old[match].rect, to: item.rect,
                                      fromOpacity: old[match].opacity, toOpacity: 1))
             } else {
@@ -117,8 +120,7 @@ struct TreemapTransition: Sendable {
         return frame
     }
 
-    /// The folder a layout shows and the bounds its items fill. Without folders shown there may be
-    /// no depth-1 item, so the folder is found up from the first item and the bounds span all of them.
+    /// The folder a layout shows, found up from the first item, and the bounds its items fill.
     private static func shown(in items: [TreemapItem]) -> Shown? {
         guard let first = items.first else { return nil }
         // A smallerItems item's node is the folder that holds it, one level up.
